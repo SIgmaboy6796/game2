@@ -23,10 +23,51 @@
             transform: translate(-50%, -50%);
             mix-blend-mode: difference; /* Makes it visible on any color */
         }
+        .menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none; /* Hidden by default */
+        }
+        .menu h2 {
+            margin-top: 0;
+        }
+        .menu button {
+            background-color: #444;
+            color: white;
+            border: 1px solid white;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        .menu button:hover {
+            background-color: #666;
+        }
     </style>
 </head>
 <body>
     <div class="crosshair"></div>
+    <div id="pauseMenu" class="menu">
+        <h2>Paused</h2>
+        <button id="resumeButton">Resume</button>
+        <button id="keybindsButton">Keybinds</button>
+    </div>
+    <div id="keybindsMenu" class="menu">
+        <h2>Keybinds</h2>
+        <p>Move Forward: W</p>
+        <p>Move Left: A</p>
+        <p>Move Backward: S</p>
+        <p>Move Right: D</p>
+        <p>Jump: Space</p>
+        <p>Shoot: Left Click</p>
+        <button id="backButton">Back</button>
+    </div>
     <script type="importmap">
         { "imports": { 
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js", 

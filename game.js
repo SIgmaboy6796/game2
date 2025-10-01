@@ -47,7 +47,7 @@ function init() {
     groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); // rotate to be horizontal
     world.addBody(groundBody);
 
-    const groundTexture = new THREE.TextureLoader().load('textures/grass.jpg');
+    const groundTexture = new THREE.TextureLoader().load('/textures/grass.jpg');
     groundTexture.wrapS = THREE.RepeatWrapping;
     groundTexture.wrapT = THREE.RepeatWrapping;
     groundTexture.repeat.set(10, 10);

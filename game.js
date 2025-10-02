@@ -249,20 +249,24 @@ function init() {
         const bulletRadius = 0.1;
         const bulletSpeed = 50;
 
+        const shootDirection = new THREE.Vector3();
+        controls.getDirection(shootDirection);
+
+        const startPosition = new THREE.Vector3();
+        startPosition.copy(controls.getObject().position);
+        startPosition.add(shootDirection.clone().multiplyScalar(1)); // Start 1 unit in front of the camera
+
         const bulletBody = new CANNON.Body({
             mass: 0.1,
             shape: new CANNON.Sphere(bulletRadius),
-            position: new CANNON.Vec3().copy(controls.getObject().position), // Start from camera
+            position: new CANNON.Vec3().copy(startPosition),
         });
 
         const bulletMesh = new THREE.Mesh(
             new THREE.SphereGeometry(bulletRadius, 8, 8),
             new THREE.MeshBasicMaterial({ color: 0xffff00 })
         );
-
-        // Get direction from camera
-        const shootDirection = new THREE.Vector3();
-        controls.getDirection(shootDirection);
+        bulletMesh.position.copy(startPosition);
 
         bulletBody.velocity.set(
             shootDirection.x * bulletSpeed,

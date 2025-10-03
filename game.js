@@ -1,6 +1,7 @@
-import * as THREE from 'three';
+import * as THREE from './three.module.js';
 import * as CANNON from 'cannon-es';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { weapons } from './gun_data.js';
 
 function init() {
     // --- SETUP ---
@@ -17,6 +18,29 @@ function init() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     document.body.appendChild(renderer.domElement);
+
+    // --- WEAPONRY ---
+    let gunMesh;
+    let currentWeaponName = 'pistol';
+    let currentWeapon = weapons[currentWeaponName];
+    let canShoot = true;
+    let isReloading = false;
+
+    function switchWeapon(weaponName) {
+        if (gunMesh) {
+            camera.remove(gunMesh);
+        }
+        currentWeaponName = weaponName;
+        currentWeapon = weapons[currentWeaponName];
+
+        // Reset ammo and create new gun model
+        currentWeapon.ammo = currentWeapon.maxAmmo;
+        gunMesh = new THREE.Mesh(currentWeapon.model, new THREE.MeshStandardMaterial({ color: 0x333333 }));
+        gunMesh.position.copy(currentWeapon.position);
+        camera.add(gunMesh);
+        console.log(`Switched to ${currentWeaponName}`);
+    }
+    
 
     // --- LIGHTING ---
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -68,18 +92,17 @@ function init() {
         position: new CANNON.Vec3(0, 5, 5),
         material: playerMaterial,
     });
+    playerBody.allowSleep = false;
     world.addBody(playerBody);
 
-    // We don't create a visible mesh for the player, as the camera is our "eyes"
-
     // --- PHYSICS CONTACT MATERIALS ---
-    // Define how materials interact (e.g., friction)
     const groundPlayerContactMaterial = new CANNON.ContactMaterial(
         groundMaterial,
         playerMaterial,
         {
             friction: 0.4,
             restitution: 0.0, // No bounce
+            contactEquationStiffness: 1e8,
         }
     );
     world.addContactMaterial(groundPlayerContactMaterial);
@@ -110,15 +133,33 @@ function init() {
 
     // --- CONTROLS ---
     const keys = {};
-    document.addEventListener('keydown', (event) => (keys[event.code] = true));
+    document.addEventListener('keydown', (event) => {
+        keys[event.code] = true;
+        if (event.code === 'Escape' && isPaused) {
+            controls.lock();
+        }
+        if (event.code === 'KeyR') {
+            reload();
+        }
+        // Weapon switching
+        if (event.code === 'Digit1') switchWeapon('pistol');
+        if (event.code === 'Digit2') switchWeapon('shotgun');
+        if (event.code === 'Digit3') switchWeapon('rocketLauncher');
+    });
     document.addEventListener('keyup', (event) => (keys[event.code] = false));
 
     let canJump = false;
     playerBody.addEventListener('collide', (event) => {
-        // The player can jump if they are standing on any physical object.
+        const contact = event.contact;
+        const up = new CANNON.Vec3(0, 1, 0);
         const contactNormal = new CANNON.Vec3();
-        if (event.contact.getImpactVelocityAlongNormal() < 2) { // Impact velocity is low
-          canJump = true;
+        if (contact.bi.id === playerBody.id) {
+            contact.ni.negate(contactNormal);
+        } else {
+            contactNormal.copy(contact.ni);
+        }
+        if (contactNormal.dot(up) > 0.5) {
+            canJump = true;
         }
     });
 
@@ -233,6 +274,160 @@ function init() {
         renderer.render(scene, camera);
     }
 
+    // --- SHOOTING & RELOADING ---
+    function reload() {
+        if (isReloading || currentWeapon.ammo === currentWeapon.maxAmmo) {
+            return;
+        }
+        isReloading = true;
+        console.log("Reloading...");
+        setTimeout(() => {
+            currentWeapon.ammo = currentWeapon.maxAmmo;
+            isReloading = false;
+            console.log("Reload complete.");
+        }, currentWeapon.reloadTime);
+    }
+
+    function shoot() {
+        if (isReloading) return;
+        if (currentWeapon.ammo <= 0) {
+            reload();
+            return;
+        }
+        if (!canShoot) return;
+
+        canShoot = false;
+        setTimeout(() => canShoot = true, currentWeapon.fireRate);
+
+        currentWeapon.ammo--;
+        console.log(`Ammo: ${currentWeapon.ammo}/${currentWeapon.maxAmmo}`);
+
+        const shootDirection = new THREE.Vector3();
+        controls.getDirection(shootDirection);
+
+        const bulletType = currentWeapon.bullet.type;
+
+        if (bulletType === 'pellet') { // Shotgun
+            for (let i = 0; i < currentWeapon.bullet.pelletCount; i++) {
+                const pelletDirection = shootDirection.clone();
+                pelletDirection.x += (Math.random() - 0.5) * currentWeapon.bullet.spread;
+                pelletDirection.y += (Math.random() - 0.5) * currentWeapon.bullet.spread;
+                pelletDirection.z += (Math.random() - 0.5) * currentWeapon.bullet.spread;
+                createBullet(pelletDirection);
+            }
+        } else { // Pistol and Rocket Launcher
+            createBullet(shootDirection);
+        }
+
+        // Recoil
+        const recoilImpulse = new CANNON.Vec3(0, 10, 0);
+        playerBody.applyImpulse(recoilImpulse);
+    }
+
+    function createBullet(direction) {
+        const bullet = currentWeapon.bullet;
+        const startPosition = new THREE.Vector3();
+        controls.getObject().getWorldPosition(startPosition);
+        startPosition.add(direction.clone().multiplyScalar(1));
+
+        const bulletBody = new CANNON.Body({
+            mass: 0.1,
+            shape: new CANNON.Sphere(bullet.radius),
+            position: new CANNON.Vec3().copy(startPosition),
+        });
+
+        const bulletMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(bullet.radius, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0xffff00 })
+        );
+        bulletMesh.position.copy(startPosition);
+
+        bulletBody.velocity.set(
+            direction.x * bullet.speed,
+            direction.y * bullet.speed,
+            direction.z * bullet.speed
+        );
+
+        bulletBody.addEventListener('collide', (event) => {
+            if (bullet.type === 'rocket') {
+                handleRocketExplosion(bulletBody.position, bullet.explosionRadius, bullet.explosionImpulse);
+            }
+            handleBulletCollision(event, bulletBody);
+        });
+
+        world.addBody(bulletBody);
+        scene.add(bulletMesh);
+        objectsToUpdate.push({ mesh: bulletMesh, body: bulletBody });
+    }
+
+    function handleBulletCollision(event, bulletBody) {
+        const contact = event.contact;
+        const targetBody = (contact.bi === bulletBody) ? contact.bj : contact.bi;
+
+        if (targetBody.mass > 0 && currentWeapon.bullet.type !== 'rocket') {
+            const impulse = bulletBody.velocity.scale(bulletBody.mass);
+            const worldContactPoint = new CANNON.Vec3();
+            const contactPointOnTarget = (contact.bi === bulletBody) ? contact.rj : contact.ri;
+            targetBody.pointToWorldFrame(contactPointOnTarget, worldContactPoint);
+            targetBody.applyImpulse(impulse, worldContactPoint);
+
+            // Create a dent
+            const hitObject = objectsToUpdate.find(obj => obj.body === targetBody);
+            if (hitObject) {
+                const dentPosition = new THREE.Vector3().copy(worldContactPoint);
+                const dentGeometry = new THREE.SphereGeometry(0.05, 4, 4);
+                const dentMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+                const dentMesh = new THREE.Mesh(dentGeometry, dentMaterial);
+                hitObject.mesh.worldToLocal(dentPosition);
+                dentMesh.position.copy(dentPosition);
+                hitObject.mesh.add(dentMesh);
+                setTimeout(() => hitObject.mesh.remove(dentMesh), 2000);
+            }
+        }
+
+        // Remove bullet on impact
+        const obj = objectsToUpdate.find(o => o.body === bulletBody);
+        if (obj) {
+            scene.remove(obj.mesh);
+            const index = objectsToUpdate.findIndex(o => o.body === bulletBody);
+            if (index > -1) {
+                objectsToUpdate.splice(index, 1);
+            }
+        }
+        world.removeBody(bulletBody);
+    }
+
+    function handleRocketExplosion(position, radius, impulse) {
+        // Explosion visual effect
+        const explosionGeometry = new THREE.SphereGeometry(radius, 16, 16);
+        const explosionMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 0.5 });
+        const explosionMesh = new THREE.Mesh(explosionGeometry, explosionMaterial);
+        explosionMesh.position.copy(position);
+        scene.add(explosionMesh);
+        setTimeout(() => scene.remove(explosionMesh), 500);
+
+        // Apply impulse to nearby objects
+        objectsToUpdate.forEach(obj => {
+            if (obj.body.mass > 0) {
+                const dist = obj.body.position.distanceTo(position);
+                if (dist < radius) {
+                    const direction = new CANNON.Vec3();
+                    obj.body.position.vsub(position, direction);
+                    direction.normalize();
+                    const impulseMagnitude = impulse * (1 - dist / radius);
+                    direction.scale(impulseMagnitude, direction);
+                    obj.body.applyImpulse(direction, obj.body.position);
+                }
+            }
+        });
+    }
+
+    window.addEventListener('mousedown', (event) => {
+        if (controls.isLocked && event.button === 0) {
+            shoot();
+        }
+    });
+
     animate();
 
     // --- RESIZE ---
@@ -242,91 +437,6 @@ function init() {
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // --- SHOOTING LOGIC (Example) ---
-
-    function shoot() {
-        // Create a bullet (visual and physical)
-        const bulletRadius = 0.1;
-        const bulletSpeed = 50;
-
-        const shootDirection = new THREE.Vector3();
-        controls.getDirection(shootDirection);
-
-        const startPosition = new THREE.Vector3();
-        startPosition.copy(controls.getObject().position);
-        startPosition.add(shootDirection.clone().multiplyScalar(1)); // Start 1 unit in front of the camera
-
-        const bulletBody = new CANNON.Body({
-            mass: 0.1,
-            shape: new CANNON.Sphere(bulletRadius),
-            position: new CANNON.Vec3().copy(startPosition),
-        });
-
-        const bulletMesh = new THREE.Mesh(
-            new THREE.SphereGeometry(bulletRadius, 8, 8),
-            new THREE.MeshBasicMaterial({ color: 0xffff00 })
-        );
-        bulletMesh.position.copy(startPosition);
-
-        bulletBody.velocity.set(
-            shootDirection.x * bulletSpeed,
-            shootDirection.y * bulletSpeed,
-            shootDirection.z * bulletSpeed
-        );
-
-        // Event listener for collision
-        bulletBody.addEventListener('collide', (event) => {
-            const contact = event.contact;
-            const bodyA = contact.bi;
-            const bodyB = contact.bj;
-            const targetBody = (bodyA === bulletBody) ? bodyB : bodyA;
-            const contactPointOnTarget = (bodyA === bulletBody) ? contact.rj : contact.ri;
-
-            // Apply impulse to dynamic bodies
-            if (targetBody.mass > 0) {
-                const impulse = bulletBody.velocity.scale(bulletBody.mass);
-                const worldContactPoint = new CANNON.Vec3();
-                targetBody.pointToWorldFrame(contactPointOnTarget, worldContactPoint);
-                targetBody.applyImpulse(impulse, worldContactPoint);
-
-                // Create a dent
-                const dentPosition = new THREE.Vector3();
-                dentPosition.copy(worldContactPoint);
-                const dentGeometry = new THREE.SphereGeometry(0.05, 4, 4);
-                const dentMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
-                const dentMesh = new THREE.Mesh(dentGeometry, dentMaterial);
-                dentMesh.position.copy(dentPosition);
-                scene.add(dentMesh);
-
-                setTimeout(() => {
-                    scene.remove(dentMesh);
-                }, 2000);
-            }
-
-            // Remove bullet on impact
-            world.removeBody(bulletBody);
-            const obj = objectsToUpdate.find(obj => obj.body === bulletBody);
-            if (obj) {
-                scene.remove(obj.mesh);
-                const index = objectsToUpdate.findIndex(o => o.body === bulletBody);
-                if (index > -1) {
-                    objectsToUpdate.splice(index, 1);
-                }
-            }
-        });
-
-        // Add to worlds
-        world.addBody(bulletBody);
-        scene.add(bulletMesh);
-        objectsToUpdate.push({ mesh: bulletMesh, body: bulletBody });
-    }
-
-
-    window.addEventListener('mousedown', (event) => {
-        if (controls.isLocked && event.button === 0) { // Left click
-            shoot();
-        }
-    });
 }
 
 window.addEventListener('DOMContentLoaded', init);

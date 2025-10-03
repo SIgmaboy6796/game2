@@ -1,9 +1,11 @@
 import * as THREE from './three.module.js';
 import * as CANNON from 'cannon-es';
-import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { PointerLockControls } from './PointerLockControls.js';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { weapons } from './gun_data.js';
 
-function init() {
+export function init(nametag) {
     // --- SETUP ---
     const scene = new THREE.Scene();
     const world = new CANNON.World({
@@ -18,6 +20,44 @@ function init() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     document.body.appendChild(renderer.domElement);
+
+    // --- NAMETAG ---
+    let nametagMesh;
+    const fontLoader = new FontLoader();
+    fontLoader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+        if (nametag) {
+            nametagMesh = createNametag(nametag, font);
+            scene.add(nametagMesh);
+        }
+    });
+
+    function createNametag(text, font) {
+        const textGeometry = new TextGeometry(text, {
+            font: font,
+            size: 0.2,
+            height: 0.02,
+        });
+        const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+        textMesh.geometry.center();
+        return textMesh;
+    }
+
+    // --- UI ---
+    const ammoCounter = document.getElementById('ammoCounter');
+    const healthBar = document.getElementById('health');
+
+    function updateAmmoUI() {
+        if (isReloading) {
+            ammoCounter.textContent = 'Reloading...';
+        } else {
+            ammoCounter.textContent = `${currentWeapon.ammo} / ${currentWeapon.maxAmmo}`;
+        }
+    }
+
+    function updateHealthUI() {
+        healthBar.style.width = `${playerBody.health}%`;
+    }
 
     // --- WEAPONRY ---
     let gunMesh;
@@ -39,6 +79,8 @@ function init() {
         gunMesh.position.copy(currentWeapon.position);
         camera.add(gunMesh);
         console.log(`Switched to ${currentWeaponName}`);
+        updateAmmoUI();
+        updateHealthUI();
     }
     
 
@@ -84,6 +126,49 @@ function init() {
     groundMesh.receiveShadow = true;
     scene.add(groundMesh);
 
+    // --- WALLS ---
+    const wallMaterial = new CANNON.Material('wallMaterial');
+
+    // Wall 1 (positive Z)
+    const wall1 = new CANNON.Body({
+        mass: 0,
+        shape: new CANNON.Plane(),
+        material: wallMaterial,
+        position: new CANNON.Vec3(0, 0, -50),
+    });
+    wall1.quaternion.setFromEuler(0, 0, 0);
+    world.addBody(wall1);
+
+    // Wall 2 (negative Z)
+    const wall2 = new CANNON.Body({
+        mass: 0,
+        shape: new CANNON.Plane(),
+        material: wallMaterial,
+        position: new CANNON.Vec3(0, 0, 50),
+    });
+    wall2.quaternion.setFromEuler(0, Math.PI, 0);
+    world.addBody(wall2);
+
+    // Wall 3 (positive X)
+    const wall3 = new CANNON.Body({
+        mass: 0,
+        shape: new CANNON.Plane(),
+        material: wallMaterial,
+        position: new CANNON.Vec3(50, 0, 0),
+    });
+    wall3.quaternion.setFromEuler(0, -Math.PI / 2, 0);
+    world.addBody(wall3);
+
+    // Wall 4 (negative X)
+    const wall4 = new CANNON.Body({
+        mass: 0,
+        shape: new CANNON.Plane(),
+        material: wallMaterial,
+        position: new CANNON.Vec3(-50, 0, 0),
+    });
+    wall4.quaternion.setFromEuler(0, Math.PI / 2, 0);
+    world.addBody(wall4);
+
     // --- PLAYER ---
     const playerMaterial = new CANNON.Material('playerMaterial');
     const playerBody = new CANNON.Body({
@@ -92,6 +177,7 @@ function init() {
         position: new CANNON.Vec3(0, 5, 5),
         material: playerMaterial,
     });
+    playerBody.health = 100;
     playerBody.allowSleep = false;
     world.addBody(playerBody);
 
@@ -107,6 +193,48 @@ function init() {
     );
     world.addContactMaterial(groundPlayerContactMaterial);
 
+    const wallPlayerContactMaterial = new CANNON.ContactMaterial(
+        wallMaterial,
+        playerMaterial,
+        {
+            friction: 0.0,
+            restitution: 0.5, // Bouncy
+        }
+    );
+    world.addContactMaterial(wallPlayerContactMaterial);
+
+    const boxCannonMaterial = new CANNON.Material('boxMaterial');
+
+    const wallBoxContactMaterial = new CANNON.ContactMaterial(
+        wallMaterial,
+        boxCannonMaterial,
+        {
+            friction: 0.1,
+            restitution: 0.5,
+        }
+    );
+    world.addContactMaterial(wallBoxContactMaterial);
+
+    const groundBoxContactMaterial = new CANNON.ContactMaterial(
+        groundMaterial,
+        boxCannonMaterial,
+        {
+            friction: 0.5,
+            restitution: 0.2,
+        }
+    );
+    world.addContactMaterial(groundBoxContactMaterial);
+
+    const boxBoxContactMaterial = new CANNON.ContactMaterial(
+        boxCannonMaterial,
+        boxCannonMaterial,
+        {
+            friction: 0.2,
+            restitution: 0.5,
+        }
+    );
+    world.addContactMaterial(boxBoxContactMaterial);
+
     // --- INTERACTIVE OBJECTS (BOXES) ---
     const objectsToUpdate = [];
     const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -121,6 +249,7 @@ function init() {
                 Math.random() * 10 + 1,
                 (Math.random() - 0.5) * 20
             ),
+            material: boxCannonMaterial,
         });
         world.addBody(boxBody);
 
@@ -160,6 +289,16 @@ function init() {
         }
         if (contactNormal.dot(up) > 0.5) {
             canJump = true;
+        }
+
+        // Damage from physics objects
+        const otherBody = event.body;
+        if (otherBody.mass > 0) { // It's a dynamic body
+            const relativeVelocity = otherBody.velocity.vsub(playerBody.velocity);
+            const damage = relativeVelocity.length() * 0.01;
+            if (damage > 1) { // Only apply damage if the impact is significant
+                applyDamage(damage);
+            }
         }
     });
 
@@ -280,10 +419,12 @@ function init() {
             return;
         }
         isReloading = true;
+        updateAmmoUI();
         console.log("Reloading...");
         setTimeout(() => {
             currentWeapon.ammo = currentWeapon.maxAmmo;
             isReloading = false;
+            updateAmmoUI();
             console.log("Reload complete.");
         }, currentWeapon.reloadTime);
     }
@@ -300,6 +441,7 @@ function init() {
         setTimeout(() => canShoot = true, currentWeapon.fireRate);
 
         currentWeapon.ammo--;
+        updateAmmoUI();
         console.log(`Ammo: ${currentWeapon.ammo}/${currentWeapon.maxAmmo}`);
 
         const shootDirection = new THREE.Vector3();
@@ -364,7 +506,10 @@ function init() {
         const contact = event.contact;
         const targetBody = (contact.bi === bulletBody) ? contact.bj : contact.bi;
 
-        if (targetBody.mass > 0 && currentWeapon.bullet.type !== 'rocket') {
+        if (targetBody === playerBody) {
+            const damage = bulletBody.velocity.length() * 0.1;
+            applyDamage(damage);
+        } else if (targetBody.mass > 0 && currentWeapon.bullet.type !== 'rocket') {
             const impulse = bulletBody.velocity.scale(bulletBody.mass);
             const worldContactPoint = new CANNON.Vec3();
             const contactPointOnTarget = (contact.bi === bulletBody) ? contact.rj : contact.ri;
@@ -422,6 +567,25 @@ function init() {
         });
     }
 
+    function applyDamage(amount) {
+        playerBody.health -= amount;
+        if (playerBody.health < 0) {
+            playerBody.health = 0;
+        }
+        updateHealthUI();
+
+        if (playerBody.health <= 0) {
+            respawn();
+        }
+    }
+
+    function respawn() {
+        playerBody.health = 100;
+        playerBody.position.set(0, 5, 5);
+        playerBody.velocity.set(0, 0, 0);
+        updateHealthUI();
+    }
+
     window.addEventListener('mousedown', (event) => {
         if (controls.isLocked && event.button === 0) {
             shoot();
@@ -435,8 +599,4 @@ function init() {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-}
-
-window.addEventListener('DOMContentLoaded', init);
+    });}

@@ -25,8 +25,8 @@ export const weapons = {
             spread: 0.1, // cone spread
         },
         fireRate: 800,
-        ammo: 2,
-        maxAmmo: 2,
+        ammo: 6,
+        maxAmmo: 6,
         reloadTime: 2000,
     },
     rocketLauncher: {

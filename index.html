@@ -49,10 +49,79 @@
         .menu button:hover {
             background-color: #666;
         }
+        #ammoCounter {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            color: white;
+            font-size: 24px;
+            font-family: monospace;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        #healthBar {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 200px;
+            height: 20px;
+            background-color: red;
+            border: 2px solid white;
+        }
+        #health {
+            width: 100%;
+            height: 100%;
+            background-color: green;
+        }
+        #mainMenu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        #nametagMenu {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: sans-serif;
+        }
+        #nametagMenu input {
+            margin-bottom: 5px;
+        }
     </style>
 </head>
 <body>
-    <div class="crosshair"></div>
+    <div id="joinIdDisplay" style="display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); color: white; font-size: 20px; background-color: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px;"></div>
+
+    <div id="mainMenu">
+        <h2>Pew Shoot</h2>
+        <button id="singlePlayerButton">Single Player</button>
+        <hr>
+        <button id="hostButton">Host Game</button>
+        <br>
+        <input type="text" id="peerIdInput" placeholder="Enter Host ID">
+        <button id="joinButton">Join Game</button>
+    </div>
+
+    <div id="nametagMenu" style="display: none;">
+        <label for="nametagInput">Enter Your Nametag:</label><br>
+        <input type="text" id="nametagInput" placeholder="Enter Nametag">
+        <button id="setNametagButton">Set Nametag</button>
+    </div>
+
+    <div id="ammoCounter" style="display: none;"></div>
+    <div id="healthBar" style="display: none;">
+        <div id="health"></div>
+    </div>
+    <div class="crosshair" style="display: none;"></div>
     <div id="pauseMenu" class="menu">
         <h2>Paused</h2>
         <button id="resumeButton">Resume</button>
@@ -68,6 +137,7 @@
         <p>Shoot: Left Click</p>
         <button id="backButton">Back</button>
     </div>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script type="importmap">
         { "imports": { 
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js", 
@@ -75,6 +145,63 @@
             "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         } }
     </script>
-    <script type="module" src="/game.js"></script>
+    <script type="module">
+        import { init as initGame } from '/game.js';
+        import { init as initNetwork } from '/network.js';
+
+        const mainMenu = document.getElementById('mainMenu');
+        const nametagMenu = document.getElementById('nametagMenu');
+        const setNametagButton = document.getElementById('setNametagButton');
+        const nametagInput = document.getElementById('nametagInput');
+        const singlePlayerButton = document.getElementById('singlePlayerButton');
+        const hostButton = document.getElementById('hostButton');
+        const joinButton = document.getElementById('joinButton');
+        const peerIdInput = document.getElementById('peerIdInput');
+
+        let nametag = 'Player'; // Default nametag
+
+        function startGame(isMultiplayer, hostId = null) {
+            mainMenu.style.display = 'none';
+            nametagMenu.style.display = 'none';
+            document.getElementById('ammoCounter').style.display = 'block';
+            document.getElementById('healthBar').style.display = 'block';
+            document.querySelector('.crosshair').style.display = 'block';
+
+            initGame(nametag);
+
+            if (isMultiplayer) {
+                initNetwork(nametag, hostId);
+            }
+        }
+
+        setNametagButton.addEventListener('click', () => {
+            const inputName = nametagInput.value.trim();
+            if (inputName) {
+                nametag = inputName;
+            }
+            nametagMenu.style.display = 'none';
+            mainMenu.style.display = 'block';
+        });
+
+        singlePlayerButton.addEventListener('click', () => {
+            startGame(false);
+        });
+
+        hostButton.addEventListener('click', () => {
+            startGame(true);
+        });
+
+        joinButton.addEventListener('click', () => {
+            const hostId = peerIdInput.value.trim();
+            if (hostId) {
+                startGame(true, hostId);
+            } else {
+                alert('Please enter a valid Host ID.');
+            }
+        });
+
+        // Show nametag menu first
+        nametagMenu.style.display = 'block';
+    </script>
 </body>
 </html>

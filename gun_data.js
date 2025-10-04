@@ -15,18 +15,35 @@ export const weapons = {
         reloadTime: 1500, // ms
     },
     shotgun: {
-        model: new THREE.BoxGeometry(0.1, 0.1, 0.8),
+        model: (() => {
+            const group = new THREE.Group();
+            // Barrel
+            const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.9), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+            barrel.position.z = -0.45;
+            group.add(barrel);
+            // Pump
+            const pump = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.4), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+            pump.position.z = -0.2;
+            pump.position.y = -0.05;
+            group.add(pump);
+            // Stock
+            const stock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.3), new THREE.MeshStandardMaterial({ color: 0x654321 }));
+            stock.position.z = 0.25;
+            stock.position.y = -0.02;
+            group.add(stock);
+            return group;
+        })(),
         position: new THREE.Vector3(0.25, -0.2, -0.5),
         bullet: {
             radius: 0.05,
             speed: 40,
             type: 'pellet',
-            pelletCount: 8,
-            spread: 0.1, // cone spread
+            pelletCount: 15,
+            spread: 0.1, // Cone spread angle
         },
-        fireRate: 800,
-        ammo: 6,
-        maxAmmo: 6,
+        fireRate: 1000,
+        ammo: 8,
+        maxAmmo: 8,
         reloadTime: 2000,
     },
     rocketLauncher: {

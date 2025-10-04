@@ -75,7 +75,11 @@ export function init(nametag) {
 
         // Reset ammo and create new gun model
         currentWeapon.ammo = currentWeapon.maxAmmo;
-        gunMesh = new THREE.Mesh(currentWeapon.model, new THREE.MeshStandardMaterial({ color: 0x333333 }));
+        if (currentWeapon.model.isGroup) {
+            gunMesh = currentWeapon.model;
+        } else {
+            gunMesh = new THREE.Mesh(currentWeapon.model, new THREE.MeshStandardMaterial({ color: 0x333333 }));
+        }
         gunMesh.position.copy(currentWeapon.position);
         camera.add(gunMesh);
         console.log(`Switched to ${currentWeaponName}`);
@@ -170,6 +174,12 @@ export function init(nametag) {
     world.addBody(wall4);
 
     // --- PLAYER ---
+    // Collision groups
+    const PLAYER = 1;
+    const BULLET = 2;
+    const BOX = 4;
+
+
     const playerMaterial = new CANNON.Material('playerMaterial');
     const playerBody = new CANNON.Body({
         mass: 70, // kg
@@ -177,6 +187,8 @@ export function init(nametag) {
         position: new CANNON.Vec3(0, 5, 5),
         material: playerMaterial,
     });
+    playerBody.collisionFilterGroup = PLAYER;
+    playerBody.collisionFilterMask = BOX | PLAYER; // Player collides with boxes and itself
     playerBody.health = 100;
     playerBody.allowSleep = false;
     world.addBody(playerBody);
@@ -235,6 +247,16 @@ export function init(nametag) {
     );
     world.addContactMaterial(boxBoxContactMaterial);
 
+    const bulletMaterial = new CANNON.Material('bulletMaterial');
+    const playerBulletContactMaterial = new CANNON.ContactMaterial(
+        playerMaterial,
+        bulletMaterial,
+        {
+            contactEquationStiffness: 0 // No collision response
+        }
+    );
+    world.addContactMaterial(playerBulletContactMaterial);
+
     // --- INTERACTIVE OBJECTS (BOXES) ---
     const objectsToUpdate = [];
     const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -251,6 +273,8 @@ export function init(nametag) {
             ),
             material: boxCannonMaterial,
         });
+        boxBody.collisionFilterGroup = BOX;
+        boxBody.collisionFilterMask = PLAYER | BULLET | BOX; // Box collides with everything
         world.addBody(boxBody);
 
         const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
@@ -380,6 +404,7 @@ export function init(nametag) {
     // --- GAME LOOP ---
     let isPaused = false;
     const clock = new THREE.Clock();
+    const bodiesToRemove = [];
     let oldElapsedTime = 0;
 
     function animate() {
@@ -397,6 +422,12 @@ export function init(nametag) {
 
         // Update physics world
         world.step(1 / 60, deltaTime, 3);
+
+        // Safely remove bodies after the physics step
+        for (const body of bodiesToRemove) {
+            world.removeBody(body);
+        }
+        bodiesToRemove.length = 0; // Clear the array
 
         // Handle player movement
         handleControls(deltaTime);
@@ -451,65 +482,85 @@ export function init(nametag) {
 
         if (bulletType === 'pellet') { // Shotgun
             for (let i = 0; i < currentWeapon.bullet.pelletCount; i++) {
-                const pelletDirection = shootDirection.clone();
-                pelletDirection.x += (Math.random() - 0.5) * currentWeapon.bullet.spread;
-                pelletDirection.y += (Math.random() - 0.5) * currentWeapon.bullet.spread;
-                pelletDirection.z += (Math.random() - 0.5) * currentWeapon.bullet.spread;
-                createBullet(pelletDirection);
+                // Create a cone spread
+                const spread = currentWeapon.bullet.spread;
+                const pelletDirection = shootDirection.clone().add(
+                    new THREE.Vector3(
+                        (Math.random() - 0.5) * spread,
+                        (Math.random() - 0.5) * spread,
+                        (Math.random() - 0.5) * spread
+                    )
+                );
+                pelletDirection.normalize();
+
+                createBullet(pelletDirection, currentWeapon.bullet);
             }
         } else { // Pistol and Rocket Launcher
-            createBullet(shootDirection);
+            createBullet(shootDirection, currentWeapon.bullet);
         }
 
         // Recoil
-        const recoilImpulse = new CANNON.Vec3(0, 10, 0);
-        playerBody.applyImpulse(recoilImpulse);
+        const recoilForce = currentWeaponName === 'shotgun' ? 25 : 10;
+        const recoilImpulse = new CANNON.Vec3(0, recoilForce, 0); // Upward kick
+        const recoilTorque = new CANNON.Vec3((Math.random() - 0.5) * 2, 0, 0); // Rotational kick
+        playerBody.applyImpulse(recoilImpulse, playerBody.position);
+        if (currentWeaponName === 'shotgun') {
+            playerBody.applyTorque(recoilTorque);
+        }
     }
 
-    function createBullet(direction) {
-        const bullet = currentWeapon.bullet;
+    function createBullet(direction, bulletData) {
         const startPosition = new THREE.Vector3();
         controls.getObject().getWorldPosition(startPosition);
-        startPosition.add(direction.clone().multiplyScalar(1));
+        startPosition.add(direction.clone().multiplyScalar(2.0));
 
         const bulletBody = new CANNON.Body({
-            mass: 0.1,
-            shape: new CANNON.Sphere(bullet.radius),
+            mass: 0.1, // A small mass for the bullet
+            shape: new CANNON.Sphere(bulletData.radius),
             position: new CANNON.Vec3().copy(startPosition),
+            material: bulletMaterial,
         });
+        bulletBody.collisionFilterGroup = BULLET;
+        bulletBody.collisionFilterMask = BOX; // Bullets only collide with boxes
 
         const bulletMesh = new THREE.Mesh(
-            new THREE.SphereGeometry(bullet.radius, 8, 8),
+            new THREE.SphereGeometry(bulletData.radius, 8, 8),
             new THREE.MeshBasicMaterial({ color: 0xffff00 })
         );
         bulletMesh.position.copy(startPosition);
 
         bulletBody.velocity.set(
-            direction.x * bullet.speed,
-            direction.y * bullet.speed,
-            direction.z * bullet.speed
+            direction.x * bulletData.speed,
+            direction.y * bulletData.speed,
+            direction.z * bulletData.speed
         );
 
+        // Each bullet needs its own data object for tracking
+        const bulletObject = {
+            mesh: bulletMesh,
+            body: bulletBody,
+            type: bulletData.type,
+            explosionRadius: bulletData.explosionRadius,
+            explosionImpulse: bulletData.explosionImpulse
+        };
+
         bulletBody.addEventListener('collide', (event) => {
-            if (bullet.type === 'rocket') {
-                handleRocketExplosion(bulletBody.position, bullet.explosionRadius, bullet.explosionImpulse);
+            if (bulletObject.type === 'rocket') {
+                handleRocketExplosion(bulletBody.position, bulletObject.explosionRadius, bulletObject.explosionImpulse);
             }
-            handleBulletCollision(event, bulletBody);
+            handleBulletCollision(event, bulletObject);
         });
 
         world.addBody(bulletBody);
         scene.add(bulletMesh);
-        objectsToUpdate.push({ mesh: bulletMesh, body: bulletBody });
+        objectsToUpdate.push(bulletObject);
     }
 
-    function handleBulletCollision(event, bulletBody) {
+    function handleBulletCollision(event, bulletObject) {
+        const bulletBody = bulletObject.body;
         const contact = event.contact;
         const targetBody = (contact.bi === bulletBody) ? contact.bj : contact.bi;
-
-        if (targetBody === playerBody) {
-            const damage = bulletBody.velocity.length() * 0.1;
-            applyDamage(damage);
-        } else if (targetBody.mass > 0 && currentWeapon.bullet.type !== 'rocket') {
+        if (targetBody.mass > 0 && bulletObject.type !== 'rocket') {
             const impulse = bulletBody.velocity.scale(bulletBody.mass);
             const worldContactPoint = new CANNON.Vec3();
             const contactPointOnTarget = (contact.bi === bulletBody) ? contact.rj : contact.ri;
@@ -531,15 +582,12 @@ export function init(nametag) {
         }
 
         // Remove bullet on impact
-        const obj = objectsToUpdate.find(o => o.body === bulletBody);
-        if (obj) {
-            scene.remove(obj.mesh);
-            const index = objectsToUpdate.findIndex(o => o.body === bulletBody);
-            if (index > -1) {
-                objectsToUpdate.splice(index, 1);
-            }
+        const index = objectsToUpdate.indexOf(bulletObject);
+        if (index > -1) {
+            objectsToUpdate.splice(index, 1);
         }
-        world.removeBody(bulletBody);
+        scene.remove(bulletObject.mesh);
+        bodiesToRemove.push(bulletBody);
     }
 
     function handleRocketExplosion(position, radius, impulse) {

@@ -1,4 +1,4 @@
-import * as THREE from './three.module.js';
+import * as THREE from 'three';
 
 export const weapons = {
     pistol: {
@@ -12,6 +12,8 @@ export const weapons = {
         fireRate: 200, // ms cooldown
         ammo: 10,
         maxAmmo: 10,
+        reserveAmmo: 30,
+        maxReserveAmmo: 30,
         reloadTime: 1500, // ms
     },
     shotgun: {
@@ -35,15 +37,17 @@ export const weapons = {
         })(),
         position: new THREE.Vector3(0.25, -0.2, -0.5),
         bullet: {
-            radius: 0.05,
-            speed: 40,
+            radius: 0.01,
+            speed: 20,
             type: 'pellet',
-            pelletCount: 15,
-            spread: 0.1, // Cone spread angle
+            pelletCount: 50,
+            spread: 0.4, // Cone spread angle
         },
         fireRate: 1000,
         ammo: 8,
         maxAmmo: 8,
+        reserveAmmo: 16,
+        maxReserveAmmo: 16,
         reloadTime: 2000,
     },
     rocketLauncher: {
@@ -53,12 +57,14 @@ export const weapons = {
             radius: 0.2,
             speed: 20,
             type: 'rocket',
-            explosionRadius: 3,
-            explosionImpulse: 50,
+            explosionRadius: 5,
+            explosionImpulse: 100,
         },
         fireRate: 1500,
-        ammo: 1,
-        maxAmmo: 1,
+        ammo: 3,
+        maxAmmo: 3,
+        reserveAmmo: 6,
+        maxReserveAmmo: 6,
         reloadTime: 3000,
     }
 };

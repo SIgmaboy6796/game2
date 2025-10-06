@@ -3,11 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Shooter Base</title>
+    <title>Pew Shoot</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
         body {
             margin: 0;
-            overflow: hidden; /* Hide scrollbars */
+            overflow: hidden;
+            background-color: #333;
+            color: white;
         }
         canvas {
             display: block;
@@ -21,7 +24,7 @@
             border-radius: 50%;
             border: 2px solid white;
             transform: translate(-50%, -50%);
-            mix-blend-mode: difference; /* Makes it visible on any color */
+            mix-blend-mode: difference;
         }
         .menu {
             position: absolute;
@@ -29,11 +32,9 @@
             left: 50%;
             transform: translate(-50%, -50%);
             background-color: rgba(0, 0, 0, 0.7);
-            color: white;
             padding: 20px;
             border-radius: 10px;
             text-align: center;
-            display: none; /* Hidden by default */
         }
         .menu h2 {
             margin-top: 0;
@@ -53,7 +54,6 @@
             position: absolute;
             bottom: 20px;
             right: 20px;
-            color: white;
             font-size: 24px;
             font-family: monospace;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
@@ -72,136 +72,346 @@
             height: 100%;
             background-color: green;
         }
-        #mainMenu {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
+        #lobby {
+            display: none;
             padding: 20px;
-            border-radius: 10px;
-            text-align: center;
         }
-        #nametagMenu {
+        #debugPanel {
             position: absolute;
             top: 10px;
             left: 10px;
-            background-color: rgba(0, 0, 0, 0.5);
+            background-color: rgba(0,0,0,0.8);
             color: white;
             padding: 10px;
             border-radius: 5px;
-            font-family: sans-serif;
-        }
-        #nametagMenu input {
-            margin-bottom: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            display: none;
+            max-height: 90vh;
+            overflow-y: auto;
+            z-index: 1000;
+            white-space: pre;
         }
     </style>
 </head>
 <body>
-    <div id="joinIdDisplay" style="display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); color: white; font-size: 20px; background-color: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px;"></div>
+    <div id="mainMenu" class="container text-center mt-5">
+        <h1>Pew Shoot</h1>
+        <div class="form-group">
+            <label for="nametagInput">Enter Your Nametag:</label>
+            <input type="text" class="form-control" id="nametagInput" placeholder="Player">
+        </div>
+        <button id="singlePlayerButton" class="btn btn-primary">Single Player</button>
+        <button id="multiplayerButton" class="btn btn-success">Multiplayer</button>
+    </div>
 
-    <div id="mainMenu">
-        <h2>Pew Shoot</h2>
-        <button id="singlePlayerButton">Single Player</button>
+    <div id="lobby" class="container mt-5">
+        <h2>Lobby</h2>
+        <div id="host-controls">
+            <button id="hostButton" class="btn btn-primary">Host Game</button>
+            <div id="host-info" style="display: none;">
+                <p>Your Host ID is: <strong id="hostIdDisplay"></strong></p>
+                <button id="startGameButton" class="btn btn-success">Start Game</button>
+            </div>
+        </div>
         <hr>
-        <button id="hostButton">Host Game</button>
-        <br>
-        <input type="text" id="peerIdInput" placeholder="Enter Host ID">
-        <button id="joinButton">Join Game</button>
+        <div id="join-controls">
+            <div class="form-group">
+                <input type="text" class="form-control" id="peerIdInput" placeholder="Enter Host ID">
+            </div>
+            <button id="joinButton" class="btn btn-primary">Join Game</button>
+        </div>
+        <hr>
+        <h3>Players in Lobby:</h3>
+        <ul id="playerList" class="list-group">
+        </ul>
     </div>
 
-    <div id="nametagMenu" style="display: none;">
-        <label for="nametagInput">Enter Your Nametag:</label><br>
-        <input type="text" id="nametagInput" placeholder="Enter Nametag">
-        <button id="setNametagButton">Set Nametag</button>
+    <div id="game-ui" style="display: none;">
+        <div id="ammoCounter"></div>
+        <div id="healthBar">
+            <div id="health"></div>
+        </div>
+        <div class="crosshair"></div>
+        <div id="networkStatus" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 18px; background-color: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px; display: none;"></div>
+        <div id="pauseMenu" class="menu" style="display: none;">
+            <h2>Paused</h2>
+            <button id="resumeButton">Resume</button>
+            <button id="keybindsButton">Keybinds</button>
+        </div>
+        <div id="keybindsMenu" class="menu" style="display: none;">
+            <h2>Keybinds</h2>
+            <p>Move Forward: W</p>
+            <p>Move Left: A</p>
+            <p>Move Backward: S</p>
+            <p>Move Right: D</p>
+            <p>Jump: Space</p>
+            <p>Pick Up Weapon: F</p>
+            <p>Reload: R</p>
+            <p>Shoot: Left Click</p>
+            <p>Select Pistol: 1</p>
+            <p>Select Shotgun: 2</p>
+            <p>Select Rocket Launcher: 3</p>
+            <button id="backButton">Back</button>
+        </div>
     </div>
 
-    <div id="ammoCounter" style="display: none;"></div>
-    <div id="healthBar" style="display: none;">
-        <div id="health"></div>
-    </div>
-    <div class="crosshair" style="display: none;"></div>
-    <div id="pauseMenu" class="menu">
-        <h2>Paused</h2>
-        <button id="resumeButton">Resume</button>
-        <button id="keybindsButton">Keybinds</button>
-    </div>
-    <div id="keybindsMenu" class="menu">
-        <h2>Keybinds</h2>
-        <p>Move Forward: W</p>
-        <p>Move Left: A</p>
-        <p>Move Backward: S</p>
-        <p>Move Right: D</p>
-        <p>Jump: Space</p>
-        <p>Shoot: Left Click</p>
-        <button id="backButton">Back</button>
-    </div>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <div id="debugPanel"></div>
+
     <script type="importmap">
-        { "imports": { 
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js", 
+        { "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
             "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            "peerjs": "https://cdn.jsdelivr.net/npm/peerjs@1.5.2/+esm"
         } }
     </script>
     <script type="module">
-        import { init as initGame } from '/game.js';
-        import { init as initNetwork } from '/network.js';
+        import * as THREE from 'three';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+        import { init as initGame, players, getMyPlayerId } from '/game.js';
+        import { initNetwork, connectToHost, sendData, getConnections, getMyId } from '/network.js'; // getMyId is correctly imported here
+        import { logPlayers, logObjects, logConnections } from '/debug.js';
 
         const mainMenu = document.getElementById('mainMenu');
-        const nametagMenu = document.getElementById('nametagMenu');
-        const setNametagButton = document.getElementById('setNametagButton');
+        const lobby = document.getElementById('lobby');
+        const gameUi = document.getElementById('game-ui');
+
         const nametagInput = document.getElementById('nametagInput');
         const singlePlayerButton = document.getElementById('singlePlayerButton');
+        const multiplayerButton = document.getElementById('multiplayerButton');
+
         const hostButton = document.getElementById('hostButton');
+        const hostInfo = document.getElementById('host-info');
+        const hostIdDisplay = document.getElementById('hostIdDisplay');
+        const startGameButton = document.getElementById('startGameButton');
+
         const joinButton = document.getElementById('joinButton');
         const peerIdInput = document.getElementById('peerIdInput');
 
-        let nametag = 'Player'; // Default nametag
+        const playerList = document.getElementById('playerList');
+        const networkStatus = document.getElementById('networkStatus');
+        const debugPanel = document.getElementById('debugPanel');
 
-        function startGame(isMultiplayer, hostId = null) {
-            mainMenu.style.display = 'none';
-            nametagMenu.style.display = 'none';
-            document.getElementById('ammoCounter').style.display = 'block';
-            document.getElementById('healthBar').style.display = 'block';
-            document.querySelector('.crosshair').style.display = 'block';
+        let nametag = 'Player';
+        let isHost = false;
+        let isMultiplayer = false;
+        let gameScene = null; // Will hold the THREE.Scene instance
+        let shootHandler = null; // Will hold the handleShoot function
+        let gameFont = null; // Will hold the loaded font
 
-            initGame(nametag);
-
-            if (isMultiplayer) {
-                initNetwork(nametag, hostId);
-            }
+        function showNetworkStatus(message, isError = false) {
+            networkStatus.textContent = message;
+            networkStatus.style.backgroundColor = isError ? 'red' : 'rgba(0,0,0,0.5)';
+            networkStatus.style.display = 'block';
+            setTimeout(() => networkStatus.style.display = 'none', 3000);
         }
 
-        setNametagButton.addEventListener('click', () => {
-            const inputName = nametagInput.value.trim();
-            if (inputName) {
-                nametag = inputName;
-            }
-            nametagMenu.style.display = 'none';
-            mainMenu.style.display = 'block';
-        });
+        function updatePlayerList(players) {
+            playerList.innerHTML = '';
+            players.forEach(player => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item';
+                li.textContent = player.nametag;
+                playerList.appendChild(li);
+            });
+        }
 
-        singlePlayerButton.addEventListener('click', () => {
-            startGame(false);
-        });
+        function launchSinglePlayerGame() {
+            isMultiplayer = false;
+            nametag = nametagInput.value.trim() || 'Player';
+            mainMenu.style.display = 'none';
+            lobby.style.display = 'none';
+            gameUi.style.display = 'block';
+            initGame(nametag, false);
+        }
+
+        function initLobby() {
+            nametag = nametagInput.value.trim() || 'Player';
+            mainMenu.style.display = 'none';
+            lobby.style.display = 'block';
+            // Initialize network as soon as we enter the lobby.
+            // This makes us ready to either host or join.
+            initNetwork(nametag, (id) => {
+                // This callback provides the peer ID once ready.
+                // If we decide to host, we'll use this ID.
+                hostIdDisplay.textContent = id;
+            });
+        }
+
+        function launchMultiplayerGame() {
+            isMultiplayer = true;
+            mainMenu.style.display = 'none';
+            lobby.style.display = 'none';
+            gameUi.style.display = 'block';
+            initGame(nametag, true, isHost);
+        }
+
+        singlePlayerButton.addEventListener('click', launchSinglePlayerGame);
+
+        multiplayerButton.addEventListener('click', initLobby);
 
         hostButton.addEventListener('click', () => {
-            startGame(true);
+            console.log('[UI] Host button clicked.');
+            isHost = true;
+            hostInfo.style.display = 'block';
+            hostButton.style.display = 'none';
+            document.getElementById('join-controls').style.display = 'none'; // Hide join controls for host
+            updatePlayerList([{ nametag }]);
         });
 
         joinButton.addEventListener('click', () => {
+            console.log('[UI] Join button clicked.');
             const hostId = peerIdInput.value.trim();
             if (hostId) {
-                startGame(true, hostId);
+                joinButton.disabled = true;
+                hostButton.disabled = true;
+                peerIdInput.disabled = true;
+                showNetworkStatus(`Connecting to ${hostId}...`);
+                connectToHost(hostId);
             } else {
-                alert('Please enter a valid Host ID.');
+                showNetworkStatus('Please enter a valid Host ID.', true);
             }
         });
 
-        // Show nametag menu first
-        nametagMenu.style.display = 'block';
+        startGameButton.addEventListener('click', () => {
+            console.log('[UI] Start Game button clicked by host.');
+            // Notify other players to start the game
+            sendData({ type: 'start-game' });
+            launchMultiplayerGame();
+        });
+
+        // --- GLOBAL NETWORKING LISTENERS ---
+        // These are set up once on page load to prevent race conditions.
+
+        function createPlayer(peerId, nametag) {
+            // This function is called by network events.
+            // It needs access to the game's scene, which is only available after initGame.
+            if (!gameScene) {
+                console.error("Attempted to create player before scene was initialized.");
+                return;
+            }
+            if (!gameFont) {
+                console.error("Attempted to create player nametag before font was loaded.");
+                // We can still create the player mesh, just without the nametag.
+            }
+            console.log(`Creating player for ${peerId} (${nametag})`);
+            const playerMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1.8, 1), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+            gameScene.add(playerMesh);
+
+            let nametagMesh = null;
+            if (gameFont) {
+                const textGeometry = new TextGeometry(nametag, { font: gameFont, size: 0.2, height: 0.02 });
+                const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                nametagMesh = new THREE.Mesh(textGeometry, textMaterial);
+                nametagMesh.geometry.center();
+                gameScene.add(nametagMesh);
+            }
+
+            players[peerId] = { mesh: playerMesh, nametagMesh: nametagMesh, nametag: nametag, position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
+        }
+
+        window.addEventListener('game-initialized', (e) => {
+            // The game.js file will dispatch this event when it's ready.
+            gameScene = e.detail.scene;
+            shootHandler = e.detail.handleShoot;
+            gameFont = e.detail.font; // Make sure game.js dispatches the font
+
+            // Now that the game is ready, process any players that have already been announced.
+            // This is a failsafe for any race conditions.
+            const connections = getConnections();
+            connections.forEach(conn => {
+                if (!players[conn.peer]) {
+                    createPlayer(conn.peer, conn.metadata.nametag);
+                }
+            });
+        });
+
+        window.addEventListener('data-received', (event) => {
+            console.log('[UI] "data-received" event:', event.detail);
+            const { peerId, data } = event.detail;
+            if (!data.type) return;
+
+            if (data.type === 'state') {
+                const player = players[peerId];
+                if (player) player.position.copy(data.position);
+            } else if (data.type === 'shoot') {
+                if (shootHandler) shootHandler(new THREE.Vector3().copy(data.direction), data.weapon);
+            } else if (data.type === 'new-player') {
+                if (!players[data.peerId]) {
+                    createPlayer(data.peerId, data.nametag);
+                }
+            } else if (data.type === 'welcome') {
+                data.players.forEach(p => {
+                    // Don't create a player for ourselves. getMyId() is from network.js
+                    if (p.peerId !== getMyId() && !players[p.peerId]) {
+                        createPlayer(p.peerId, p.nametag);
+                    }
+                });
+            }
+        });
+
+        window.addEventListener('player-list-updated', (event) => {
+            console.log('[UI] "player-list-updated" event:', event.detail);
+            updatePlayerList(event.detail.players);
+            if (!isHost) startGameButton.style.display = 'none';
+        });
+
+        window.addEventListener('game-started', () => {
+            console.log('[UI] "game-started" event received. Launching multiplayer game.');
+            launchMultiplayerGame();
+        });
+
+        window.addEventListener('player-disconnected', (event) => {
+            console.log('[UI] "player-disconnected" event:', event.detail);
+            const { peerId } = event.detail;
+            if (players[peerId] && players[peerId].nametagMesh && gameScene) {
+                gameScene.remove(players[peerId].nametagMesh);
+            }
+            if (players[peerId] && gameScene) {
+                gameScene.remove(players[peerId].mesh);
+                delete players[peerId];
+            }
+            showNetworkStatus(`Player ${event.detail.peerId} disconnected.`, true);
+            if (isHost && lobby.style.display === 'block') {
+                // Host needs to update everyone's player list
+                const connections = getConnections();
+                const players = connections.map(c => ({ nametag: c.metadata.nametag }));
+                players.push({ nametag });
+                sendData({ type: 'player-list', players });
+                updatePlayerList(players);
+            }
+        });
+
+        window.addEventListener('connection-open', (event) => {
+            console.log('[UI] "connection-open" event:', event.detail);
+            showNetworkStatus(`Connected to ${event.detail.peerId}!`);
+            // Any UI updates for successful connection can go here.
+        });
+
+        window.addEventListener('connection-error', (event) => {
+            console.error('[UI] "connection-error" event:', event.detail);
+            showNetworkStatus(`Error: ${event.detail.error.type || 'Connection failed'}`, true);
+            joinButton.disabled = false;
+            peerIdInput.disabled = false;
+        });
+
+        // --- DEBUGGING ---
+        let debugVisible = false;
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Backquote') { // ` key
+                debugVisible = !debugVisible;
+                debugPanel.style.display = debugVisible ? 'block' : 'none';
+                if (debugVisible) {
+                    updateDebugPanel();
+                }
+            }
+        });
+
+        function updateDebugPanel() {
+            debugPanel.textContent = `${logPlayers(true)}\n\n${logObjects(true)}\n\n${logConnections(true)}`;
+            if (debugVisible) requestAnimationFrame(updateDebugPanel);
+        }
     </script>
 </body>
 </html>

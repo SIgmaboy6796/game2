@@ -1,13 +1,18 @@
-import * as THREE from './three.module.js';
+import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { PointerLockControls } from './PointerLockControls.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
-import { weapons } from './gun_data.js';
+import { weapons } from './gun_data.js'; // This was missing from the context, but is fine.
+import { sendData } from './network.js';
+import { getMyId } from './network.js';
 
-export function init(nametag) {
+export const objectsToUpdate = [];
+export const players = {};
+let myPlayerId = null;
+export function init(nametag, isMultiplayer = false) {
     // --- SETUP ---
-    const scene = new THREE.Scene();
+    const scene = new THREE.Scene(); // This should be accessible to createPlayer
     const world = new CANNON.World({
         gravity: new CANNON.Vec3(0, -9.82, 0), // m/s²
     });
@@ -21,28 +26,25 @@ export function init(nametag) {
     renderer.shadowMap.enabled = true;
     document.body.appendChild(renderer.domElement);
 
+    if (isMultiplayer) {
+        myPlayerId = getMyId();
+        if (myPlayerId) console.log(`Game initialized for multiplayer with my ID: ${myPlayerId}`);
+    }
+
     // --- NAMETAG ---
     let nametagMesh;
     const fontLoader = new FontLoader();
     fontLoader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+        // Font is now loaded, we can create the local player's nametag
         if (nametag) {
             nametagMesh = createNametag(nametag, font);
             scene.add(nametagMesh);
         }
+        // Now that all assets are ready, dispatch the event.
+        window.dispatchEvent(new CustomEvent('game-initialized', {
+            detail: { scene: scene, handleShoot: handleShoot, font: font }
+        }));
     });
-
-    function createNametag(text, font) {
-        const textGeometry = new TextGeometry(text, {
-            font: font,
-            size: 0.2,
-            height: 0.02,
-        });
-        const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-        textMesh.geometry.center();
-        return textMesh;
-    }
-
     // --- UI ---
     const ammoCounter = document.getElementById('ammoCounter');
     const healthBar = document.getElementById('health');
@@ -51,7 +53,7 @@ export function init(nametag) {
         if (isReloading) {
             ammoCounter.textContent = 'Reloading...';
         } else {
-            ammoCounter.textContent = `${currentWeapon.ammo} / ${currentWeapon.maxAmmo}`;
+            ammoCounter.textContent = `${currentWeapon.ammo} / ${currentWeapon.reserveAmmo}`;
         }
     }
 
@@ -63,20 +65,28 @@ export function init(nametag) {
     let gunMesh;
     let currentWeaponName = 'pistol';
     let currentWeapon = weapons[currentWeaponName];
+    const unlockedWeapons = { 'pistol': true, 'shotgun': false, 'rocketLauncher': false };
     let canShoot = true;
     let isReloading = false;
 
     function switchWeapon(weaponName) {
+        if (!unlockedWeapons[weaponName]) {
+            console.log(`${weaponName} is not unlocked.`);
+            return;
+        }
         if (gunMesh) {
             camera.remove(gunMesh);
         }
         currentWeaponName = weaponName;
         currentWeapon = weapons[currentWeaponName];
 
-        // Reset ammo and create new gun model
-        currentWeapon.ammo = currentWeapon.maxAmmo;
-        if (currentWeapon.model.isGroup) {
-            gunMesh = currentWeapon.model;
+        // Create new gun model
+        // When cloning a model, we need to make sure we are not re-using the same material instances
+        if (currentWeapon.model.isGroup) { 
+            gunMesh = currentWeapon.model.clone();
+            gunMesh.traverse(child => {
+                if(child.isMesh) child.material = child.material.clone();
+            });
         } else {
             gunMesh = new THREE.Mesh(currentWeapon.model, new THREE.MeshStandardMaterial({ color: 0x333333 }));
         }
@@ -84,9 +94,8 @@ export function init(nametag) {
         camera.add(gunMesh);
         console.log(`Switched to ${currentWeaponName}`);
         updateAmmoUI();
-        updateHealthUI();
     }
-    
+
 
     // --- LIGHTING ---
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -258,7 +267,6 @@ export function init(nametag) {
     world.addContactMaterial(playerBulletContactMaterial);
 
     // --- INTERACTIVE OBJECTS (BOXES) ---
-    const objectsToUpdate = [];
     const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
     const boxMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
 
@@ -284,6 +292,36 @@ export function init(nametag) {
         objectsToUpdate.push({ mesh: boxMesh, body: boxBody });
     }
 
+    // --- WEAPON PICKUPS ---
+    const weaponPickups = [];
+
+    function createWeaponPickup(weaponName, position) {
+        const weaponData = weapons[weaponName];
+        let pickupMesh;
+        if (weaponData.model.isGroup) {
+            pickupMesh = weaponData.model.clone();
+            pickupMesh.traverse(child => {
+                if(child.isMesh) child.material = child.material.clone();
+            });
+        } else {
+            pickupMesh = new THREE.Mesh(weaponData.model, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+        }
+        
+        pickupMesh.scale.set(2, 2, 2); // Make it bigger so it's easier to see
+        pickupMesh.position.copy(position);
+        scene.add(pickupMesh);
+
+        const pickup = {
+            name: weaponName,
+            mesh: pickupMesh,
+            isPickedUp: false
+        };
+        weaponPickups.push(pickup);
+    }
+
+    createWeaponPickup('shotgun', new THREE.Vector3(10, 0.5, 10));
+    createWeaponPickup('rocketLauncher', new THREE.Vector3(-10, 0.5, -10));
+
     // --- CONTROLS ---
     const keys = {};
     document.addEventListener('keydown', (event) => {
@@ -295,9 +333,13 @@ export function init(nametag) {
             reload();
         }
         // Weapon switching
-        if (event.code === 'Digit1') switchWeapon('pistol');
-        if (event.code === 'Digit2') switchWeapon('shotgun');
-        if (event.code === 'Digit3') switchWeapon('rocketLauncher');
+        if (event.code === 'Digit1' && unlockedWeapons.pistol) switchWeapon('pistol');
+        if (event.code === 'Digit2' && unlockedWeapons.shotgun) switchWeapon('shotgun');
+        if (event.code === 'Digit3' && unlockedWeapons.rocketLauncher) switchWeapon('rocketLauncher');
+
+        if (event.code === 'KeyF') {
+            tryPickupWeapon();
+        }
     });
     document.addEventListener('keyup', (event) => (keys[event.code] = false));
 
@@ -401,6 +443,26 @@ export function init(nametag) {
         }
     }
 
+    function tryPickupWeapon() {
+        const pickupDistance = 2; // How close the player needs to be
+        for (const pickup of weaponPickups) {
+            if (pickup.isPickedUp) continue;
+
+            const distance = playerBody.position.distanceTo(pickup.mesh.position);
+            if (distance < pickupDistance) {
+                console.log(`Picked up ${pickup.name}`);
+                unlockedWeapons[pickup.name] = true;
+                pickup.isPickedUp = true;
+                scene.remove(pickup.mesh);
+                
+                // Give some reserve ammo on pickup
+                weapons[pickup.name].reserveAmmo = Math.min(weapons[pickup.name].maxReserveAmmo, weapons[pickup.name].reserveAmmo + weapons[pickup.name].maxAmmo);
+                switchWeapon(pickup.name); // Switch to the new weapon
+                break; // Only pick up one weapon at a time
+            }
+        }
+    }
+
     // --- GAME LOOP ---
     let isPaused = false;
     const clock = new THREE.Clock();
@@ -441,24 +503,48 @@ export function init(nametag) {
             obj.mesh.quaternion.copy(obj.body.quaternion);
         }
 
+        // Update remote player meshes
+        for (const id in players) {
+            const player = players[id];
+            if (!player.mesh) continue;
+            player.mesh.position.lerp(player.position, 0.1);
+            // Update nametag to follow player and face camera
+            if (player.nametagMesh) {
+                player.nametagMesh.position.copy(player.mesh.position);
+                player.nametagMesh.position.y += 1.2; // Position above the player's head
+                player.nametagMesh.quaternion.copy(camera.quaternion);
+            }
+            player.mesh.quaternion.slerp(player.quaternion, 0.1);
+        }
+
         renderer.render(scene, camera);
     }
 
     // --- SHOOTING & RELOADING ---
     function reload() {
-        if (isReloading || currentWeapon.ammo === currentWeapon.maxAmmo) {
+        if (isReloading || currentWeapon.ammo === currentWeapon.maxAmmo || currentWeapon.reserveAmmo <= 0) {
             return;
         }
         isReloading = true;
         updateAmmoUI();
         console.log("Reloading...");
         setTimeout(() => {
-            currentWeapon.ammo = currentWeapon.maxAmmo;
+            const ammoNeeded = currentWeapon.maxAmmo - currentWeapon.ammo;
+            const ammoToReload = Math.min(ammoNeeded, currentWeapon.reserveAmmo);
+
+            currentWeapon.ammo += ammoToReload;
+            currentWeapon.reserveAmmo -= ammoToReload;
+
             isReloading = false;
             updateAmmoUI();
             console.log("Reload complete.");
         }, currentWeapon.reloadTime);
     }
+
+    // Initialize weapon at start
+    switchWeapon('pistol');
+    updateHealthUI();
+
 
     function shoot() {
         if (isReloading) return;
@@ -473,18 +559,27 @@ export function init(nametag) {
 
         currentWeapon.ammo--;
         updateAmmoUI();
-        console.log(`Ammo: ${currentWeapon.ammo}/${currentWeapon.maxAmmo}`);
 
         const shootDirection = new THREE.Vector3();
         controls.getDirection(shootDirection);
 
-        const bulletType = currentWeapon.bullet.type;
+        sendData({
+            type: 'shoot',
+            direction: shootDirection,
+            weapon: currentWeaponName
+        });
+
+        handleShoot(shootDirection, currentWeaponName);
+    }
+
+    function handleShoot(direction, weaponName) {
+        const weapon = weapons[weaponName];
+        const bulletType = weapon.bullet.type;
 
         if (bulletType === 'pellet') { // Shotgun
-            for (let i = 0; i < currentWeapon.bullet.pelletCount; i++) {
-                // Create a cone spread
-                const spread = currentWeapon.bullet.spread;
-                const pelletDirection = shootDirection.clone().add(
+            for (let i = 0; i < weapon.bullet.pelletCount; i++) {
+                const spread = weapon.bullet.spread;
+                const pelletDirection = direction.clone().add(
                     new THREE.Vector3(
                         (Math.random() - 0.5) * spread,
                         (Math.random() - 0.5) * spread,
@@ -493,18 +588,18 @@ export function init(nametag) {
                 );
                 pelletDirection.normalize();
 
-                createBullet(pelletDirection, currentWeapon.bullet);
+                createBullet(pelletDirection, weapon.bullet);
             }
         } else { // Pistol and Rocket Launcher
-            createBullet(shootDirection, currentWeapon.bullet);
+            createBullet(direction, weapon.bullet);
         }
 
         // Recoil
-        const recoilForce = currentWeaponName === 'shotgun' ? 25 : 10;
+        const recoilForce = weaponName === 'shotgun' ? 25 : 10;
         const recoilImpulse = new CANNON.Vec3(0, recoilForce, 0); // Upward kick
         const recoilTorque = new CANNON.Vec3((Math.random() - 0.5) * 2, 0, 0); // Rotational kick
         playerBody.applyImpulse(recoilImpulse, playerBody.position);
-        if (currentWeaponName === 'shotgun') {
+        if (weaponName === 'shotgun') {
             playerBody.applyTorque(recoilTorque);
         }
     }
@@ -535,7 +630,6 @@ export function init(nametag) {
             direction.z * bulletData.speed
         );
 
-        // Each bullet needs its own data object for tracking
         const bulletObject = {
             mesh: bulletMesh,
             body: bulletBody,
@@ -567,12 +661,11 @@ export function init(nametag) {
             targetBody.pointToWorldFrame(contactPointOnTarget, worldContactPoint);
             targetBody.applyImpulse(impulse, worldContactPoint);
 
-            // Create a dent
             const hitObject = objectsToUpdate.find(obj => obj.body === targetBody);
             if (hitObject) {
                 const dentPosition = new THREE.Vector3().copy(worldContactPoint);
                 const dentGeometry = new THREE.SphereGeometry(0.05, 4, 4);
-                const dentMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+                const dentMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
                 const dentMesh = new THREE.Mesh(dentGeometry, dentMaterial);
                 hitObject.mesh.worldToLocal(dentPosition);
                 dentMesh.position.copy(dentPosition);
@@ -581,7 +674,6 @@ export function init(nametag) {
             }
         }
 
-        // Remove bullet on impact
         const index = objectsToUpdate.indexOf(bulletObject);
         if (index > -1) {
             objectsToUpdate.splice(index, 1);
@@ -591,7 +683,6 @@ export function init(nametag) {
     }
 
     function handleRocketExplosion(position, radius, impulse) {
-        // Explosion visual effect
         const explosionGeometry = new THREE.SphereGeometry(radius, 16, 16);
         const explosionMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 0.5 });
         const explosionMesh = new THREE.Mesh(explosionGeometry, explosionMaterial);
@@ -599,7 +690,6 @@ export function init(nametag) {
         scene.add(explosionMesh);
         setTimeout(() => scene.remove(explosionMesh), 500);
 
-        // Apply impulse to nearby objects
         objectsToUpdate.forEach(obj => {
             if (obj.body.mass > 0) {
                 const dist = obj.body.position.distanceTo(position);
@@ -640,11 +730,34 @@ export function init(nametag) {
         }
     });
 
-    animate();
+    function createNametag(text, font) {
+        const textGeometry = new TextGeometry(text, {
+            font: font,
+            size: 0.2,
+            height: 0.02,
+        });
+        const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+        textMesh.geometry.center();
+        return textMesh;
+    }
 
-    // --- RESIZE ---
-    window.addEventListener('resize', () => {
+    animate();
+    
+    function onResize() {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
-    });}
+    }
+
+    window.addEventListener('resize', onResize);
+
+}
+
+export function getMyPlayerId() {
+    return myPlayerId;
+}
+
+// This was missing, but it's better to get the ID from network.js
+// For consistency, I'll add the import here, but ideally, game logic
+// would get the ID passed to it rather than importing it.

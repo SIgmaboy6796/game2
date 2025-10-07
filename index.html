@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pew Shoot</title>
+    <title>Call-Of-Zdenek</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
         body {
@@ -100,7 +100,7 @@
 </head>
 <body>
     <div id="mainMenu" class="container text-center mt-5">
-        <h1>Pew Shoot</h1>
+        <h1>Call-Of-Zdenek</h1>
         <div class="form-group">
             <label for="nametagInput">Enter Your Nametag:</label>
             <input type="text" class="form-control" id="nametagInput" placeholder="Player">
@@ -111,27 +111,23 @@
 
     <div id="lobby" class="container mt-5">
         <h2>Lobby</h2>
-        <div id="host-controls">
-            <button id="hostButton" class="btn btn-primary">Host Game</button>
-            <div id="host-info" style="display: none;">
-                <div id="pending-connections-container" class="mt-3" style="display: none;">
-                    <h5>Incoming Connections:</h5>
-                    <ul id="pendingConnectionList" class="list-group text-left"></ul>
-                </div>
-                <p>Your Host ID is: <strong id="hostIdDisplay"></strong></p>
-                <button id="startGameButton" class="btn btn-success">Start Game</button>
+        <button id="hostButton" class="btn btn-primary">Host a New Game</button>
+        <button id="refreshGamesButton" class="btn btn-info ml-2">Refresh List</button>
+        
+        <div id="host-info" class="mt-3" style="display: none;">
+            <p>Your game is hosted! Your room code is: <strong id="hostIdDisplay" class="h4"></strong></p>
+            <div id="pending-connections-container" class="mt-3" style="display: none;">
+                <h5>Incoming Connections:</h5>
+                <ul id="pendingConnectionList" class="list-group text-left"></ul>
             </div>
+            <h3>Players in Lobby:</h3>
+            <ul id="playerList" class="list-group mb-3"></ul>
+            <button id="startGameButton" class="btn btn-success btn-lg">Start Game</button>
         </div>
         <hr>
-        <div id="join-controls">
-            <div class="form-group">
-                <input type="text" class="form-control" id="peerIdInput" placeholder="Enter Host ID">
-            </div>
-            <button id="joinButton" class="btn btn-primary">Join Game</button>
-        </div>
-        <hr>
-        <h3>Players in Lobby:</h3>
-        <ul id="playerList" class="list-group">
+        <h3>Available Games:</h3>
+        <ul id="gameList" class="list-group">
+            <!-- Game list will be populated here -->
         </ul>
     </div>
 
@@ -194,8 +190,8 @@
         const hostIdDisplay = document.getElementById('hostIdDisplay');
         const startGameButton = document.getElementById('startGameButton');
 
-        const joinButton = document.getElementById('joinButton');
-        const peerIdInput = document.getElementById('peerIdInput');
+        const gameList = document.getElementById('gameList');
+        const refreshGamesButton = document.getElementById('refreshGamesButton');
 
         const playerList = document.getElementById('playerList');
         const networkStatus = document.getElementById('networkStatus');
@@ -244,11 +240,7 @@
             lobby.style.display = 'block';
             // Initialize network as soon as we enter the lobby.
             // This makes us ready to either host or join.
-            initNetwork(nametag, (id) => {
-                // This callback provides the peer ID once ready.
-                // If we decide to host, we'll use this ID.
-                hostIdDisplay.textContent = id;
-            });
+            initNetwork(nametag);
         }
 
         function launchMultiplayerGame() {
@@ -267,25 +259,23 @@
             console.log('[UI] Host button clicked.');
             isHost = true;
             setAsHost(); // Tell the network layer that we are the host.
+            hostButton.style.display = 'none';
+            refreshGamesButton.style.display = 'none';
+            document.getElementById('gameList').style.display = 'none';
             hostInfo.style.display = 'block';
             pendingConnectionsContainer.style.display = 'block';
-            hostButton.style.display = 'none';
-            document.getElementById('join-controls').style.display = 'none'; // Hide join controls for host
             updatePlayerList([{ nametag }]);
         });
 
-        joinButton.addEventListener('click', () => {
-            console.log('[UI] Join button clicked.');
-            const hostId = peerIdInput.value.trim();
-            if (hostId) {
-                joinButton.disabled = true;
-                hostButton.disabled = true;
-                peerIdInput.disabled = true;
-                showNetworkStatus(`Connecting to ${hostId}...`);
-                connectToHost(hostId);
-            } else {
-                showNetworkStatus('Please enter a valid Host ID.', true);
-            }
+        refreshGamesButton.addEventListener('click', () => {
+            sendData({ type: 'get-games' });
+        });
+
+        gameList.addEventListener('click', (event) => {
+            const target = event.target.closest('.join-btn');
+            if (!target) return;
+            const roomCode = target.dataset.roomCode;
+            sendData({ type: 'get-peer-id', roomCode });
         });
 
         startGameButton.addEventListener('click', () => {
@@ -388,6 +378,10 @@
                 }
             } else if (data.type === 'welcome') {
                 // This is for the newly joined client
+                hostButton.style.display = 'none';
+                refreshGamesButton.style.display = 'none';
+                document.getElementById('gameList').style.display = 'none';
+                hostInfo.innerHTML = '<p>Connected to lobby. Waiting for host to start...</p>';
                 data.players.forEach(p => {
                     // Don't create a player for ourselves. getMyId() is from network.js
                     if (p.peerId !== getMyId() && !players[p.peerId]) {
@@ -403,21 +397,32 @@
                 // This is for clients when the host starts the game
                 dispatchNetworkEvent('game-started');
             }
+            else if (data.type === 'game-hosted') {
+                hostIdDisplay.textContent = data.roomCode;
+            }
+            else if (data.type === 'game-list') {
+                gameList.innerHTML = '';
+                if (data.games.length === 0) {
+                    gameList.innerHTML = '<li class="list-group-item">No active games found. Host one!</li>';
+                } else {
+                    data.games.forEach(game => {
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                        li.innerHTML = `<span>${game.nametag}'s Game (Code: ${game.roomCode})</span>
+                                        <button class="btn btn-sm btn-success join-btn" data-room-code="${game.roomCode}">Join</button>`;
+                        gameList.appendChild(li);
+                    });
+                }
+            } else if (data.type === 'peer-id-response') {
+                showNetworkStatus(`Joining game ${data.roomCode}...`);
+                connectToHost(data.peerId);
+            }
 
         });
 
         window.addEventListener('player-list-updated', (event) => {
             console.log('[UI] "player-list-updated" event:', event.detail);
             updatePlayerList(event.detail.players);
-            // If I'm a client and I just received a player list, it means I've successfully joined the lobby.
-            if (!isHost && lobby.style.display === 'block') {
-                // Hide join controls and show that we are waiting for the host.
-                document.getElementById('join-controls').style.display = 'none';
-                hostButton.style.display = 'none';
-                hostInfo.style.display = 'block';
-                hostInfo.innerHTML = '<p>Connected to lobby. Waiting for host to start...</p>';
-                startGameButton.style.display = 'none'; // Only host can start
-            }
             if (!isHost) startGameButton.style.display = 'none';
         });
 

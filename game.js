@@ -10,7 +10,7 @@ import { getMyId } from './network.js';
 export const objectsToUpdate = [];
 export const players = {};
 let myPlayerId = null;
-export function init(nametag, isMultiplayer = false) {
+export function init(nametag, isMultiplayer = false, isHost = false) {
     // --- SETUP ---
     const scene = new THREE.Scene(); // This should be accessible to createPlayer
     const world = new CANNON.World({
@@ -27,7 +27,7 @@ export function init(nametag, isMultiplayer = false) {
     document.body.appendChild(renderer.domElement);
 
     if (isMultiplayer) {
-        myPlayerId = getMyId();
+        myPlayerId = getMyId(); // This is the local player's peer ID
         if (myPlayerId) console.log(`Game initialized for multiplayer with my ID: ${myPlayerId}`);
     }
 

@@ -92,6 +92,10 @@
             z-index: 1000;
             white-space: pre;
         }
+        #playerList .list-group-item,
+        #pendingConnectionList .list-group-item {
+            color: black; /* Make lobby text readable */
+        }
     </style>
 </head>
 <body>
@@ -110,6 +114,10 @@
         <div id="host-controls">
             <button id="hostButton" class="btn btn-primary">Host Game</button>
             <div id="host-info" style="display: none;">
+                <div id="pending-connections-container" class="mt-3" style="display: none;">
+                    <h5>Incoming Connections:</h5>
+                    <ul id="pendingConnectionList" class="list-group text-left"></ul>
+                </div>
                 <p>Your Host ID is: <strong id="hostIdDisplay"></strong></p>
                 <button id="startGameButton" class="btn btn-success">Start Game</button>
             </div>
@@ -170,7 +178,7 @@
         import * as THREE from 'three';
         import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
         import { init as initGame, players, getMyPlayerId } from '/game.js';
-        import { initNetwork, connectToHost, sendData, getConnections, getMyId } from '/network.js'; // getMyId is correctly imported here
+        import { initNetwork, connectToHost, sendData, getConnections, getMyId, setAsHost, acceptConnection, declineConnection } from '/network.js';
         import { logPlayers, logObjects, logConnections } from '/debug.js';
 
         const mainMenu = document.getElementById('mainMenu');
@@ -193,12 +201,16 @@
         const networkStatus = document.getElementById('networkStatus');
         const debugPanel = document.getElementById('debugPanel');
 
+        const pendingConnectionsContainer = document.getElementById('pending-connections-container');
+        const pendingConnectionList = document.getElementById('pendingConnectionList');
+
         let nametag = 'Player';
         let isHost = false;
         let isMultiplayer = false;
         let gameScene = null; // Will hold the THREE.Scene instance
         let shootHandler = null; // Will hold the handleShoot function
         let gameFont = null; // Will hold the loaded font
+        const playerCreateQueue = []; // Queue for players that arrive before the game scene is ready
 
         function showNetworkStatus(message, isError = false) {
             networkStatus.textContent = message;
@@ -227,7 +239,7 @@
         }
 
         function initLobby() {
-            nametag = nametagInput.value.trim() || 'Player';
+            nametag = nametagInput.value.trim() || `Player-${Math.floor(1000 + Math.random() * 9000)}`;
             mainMenu.style.display = 'none';
             lobby.style.display = 'block';
             // Initialize network as soon as we enter the lobby.
@@ -254,7 +266,9 @@
         hostButton.addEventListener('click', () => {
             console.log('[UI] Host button clicked.');
             isHost = true;
+            setAsHost(); // Tell the network layer that we are the host.
             hostInfo.style.display = 'block';
+            pendingConnectionsContainer.style.display = 'block';
             hostButton.style.display = 'none';
             document.getElementById('join-controls').style.display = 'none'; // Hide join controls for host
             updatePlayerList([{ nametag }]);
@@ -281,14 +295,30 @@
             launchMultiplayerGame();
         });
 
+        pendingConnectionList.addEventListener('click', (event) => {
+            const target = event.target;
+            const peerId = target.dataset.peerId;
+            if (!peerId) return;
+
+            if (target.classList.contains('accept-btn')) {
+                console.log(`[UI] Accepting connection from ${peerId}`);
+                acceptConnection(peerId);
+            } else if (target.classList.contains('decline-btn')) {
+                console.log(`[UI] Declining connection from ${peerId}`);
+                declineConnection(peerId);
+            }
+            document.getElementById(`pending-${peerId}`).remove();
+        });
+
         // --- GLOBAL NETWORKING LISTENERS ---
         // These are set up once on page load to prevent race conditions.
 
         function createPlayer(peerId, nametag) {
             // This function is called by network events.
             // It needs access to the game's scene, which is only available after initGame.
-            if (!gameScene) {
-                console.error("Attempted to create player before scene was initialized.");
+            if (!gameScene || !gameFont) {
+                console.log(`[UI] Scene not ready. Queuing creation of player ${peerId}`);
+                playerCreateQueue.push({ peerId, nametag });
                 return;
             }
             if (!gameFont) {
@@ -299,13 +329,15 @@
             const playerMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1.8, 1), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
             gameScene.add(playerMesh);
 
-            let nametagMesh = null;
-            if (gameFont) {
+            let nametagMesh = null; // Initialize as null
+            if (gameFont && gameScene) { // Ensure both scene and font are ready
                 const textGeometry = new TextGeometry(nametag, { font: gameFont, size: 0.2, height: 0.02 });
                 const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
                 nametagMesh = new THREE.Mesh(textGeometry, textMaterial);
                 nametagMesh.geometry.center();
                 gameScene.add(nametagMesh);
+            } else {
+                console.warn(`[UI] gameFont not ready when creating player ${peerId}. Nametag will be missing.`);
             }
 
             players[peerId] = { mesh: playerMesh, nametagMesh: nametagMesh, nametag: nametag, position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
@@ -317,14 +349,27 @@
             shootHandler = e.detail.handleShoot;
             gameFont = e.detail.font; // Make sure game.js dispatches the font
 
-            // Now that the game is ready, process any players that have already been announced.
-            // This is a failsafe for any race conditions.
-            const connections = getConnections();
-            connections.forEach(conn => {
-                if (!players[conn.peer]) {
-                    createPlayer(conn.peer, conn.metadata.nametag);
-                }
-            });
+            // Now that the game is ready, process any players that were queued.
+            console.log(`[UI] Game initialized. Processing ${playerCreateQueue.length} queued players.`);
+            while (playerCreateQueue.length > 0) {
+                const playerData = playerCreateQueue.shift();
+                createPlayer(playerData.peerId, playerData.nametag);
+            }
+        });
+
+        window.addEventListener('pending-connection', (event) => {
+            const { peerId, nametag } = event.detail;
+            console.log(`[UI] "pending-connection" event for ${peerId} (${nametag})`);
+            const li = document.createElement('li');
+            li.id = `pending-${peerId}`;
+            li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            li.innerHTML = `
+                <span>${nametag} (${peerId})</span>
+                <div>
+                    <button class="btn btn-sm btn-success accept-btn" data-peer-id="${peerId}">Accept</button>
+                    <button class="btn btn-sm btn-danger decline-btn" data-peer-id="${peerId}">Decline</button>
+                </div>`;
+            pendingConnectionList.appendChild(li);
         });
 
         window.addEventListener('data-received', (event) => {
@@ -342,6 +387,7 @@
                     createPlayer(data.peerId, data.nametag);
                 }
             } else if (data.type === 'welcome') {
+                // This is for the newly joined client
                 data.players.forEach(p => {
                     // Don't create a player for ourselves. getMyId() is from network.js
                     if (p.peerId !== getMyId() && !players[p.peerId]) {
@@ -349,11 +395,29 @@
                     }
                 });
             }
+            else if (data.type === 'player-list') { // Client receives this
+                // This is for clients already in the lobby when another joins/leaves
+                dispatchNetworkEvent('player-list-updated', { players: data.players });
+            }
+            else if (data.type === 'start-game') {
+                // This is for clients when the host starts the game
+                dispatchNetworkEvent('game-started');
+            }
+
         });
 
         window.addEventListener('player-list-updated', (event) => {
             console.log('[UI] "player-list-updated" event:', event.detail);
             updatePlayerList(event.detail.players);
+            // If I'm a client and I just received a player list, it means I've successfully joined the lobby.
+            if (!isHost && lobby.style.display === 'block') {
+                // Hide join controls and show that we are waiting for the host.
+                document.getElementById('join-controls').style.display = 'none';
+                hostButton.style.display = 'none';
+                hostInfo.style.display = 'block';
+                hostInfo.innerHTML = '<p>Connected to lobby. Waiting for host to start...</p>';
+                startGameButton.style.display = 'none'; // Only host can start
+            }
             if (!isHost) startGameButton.style.display = 'none';
         });
 
@@ -386,14 +450,11 @@
         window.addEventListener('connection-open', (event) => {
             console.log('[UI] "connection-open" event:', event.detail);
             showNetworkStatus(`Connected to ${event.detail.peerId}!`);
-            // Any UI updates for successful connection can go here.
         });
 
         window.addEventListener('connection-error', (event) => {
             console.error('[UI] "connection-error" event:', event.detail);
             showNetworkStatus(`Error: ${event.detail.error.type || 'Connection failed'}`, true);
-            joinButton.disabled = false;
-            peerIdInput.disabled = false;
         });
 
         // --- DEBUGGING ---

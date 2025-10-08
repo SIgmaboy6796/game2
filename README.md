@@ -15,7 +15,6 @@ This project is a 3D first-person shooter (FPS) game built with modern web techn
 *   `game.js`: This file contains the entire game logic, including scene setup, physics, controls, and the game loop.
 *   `network.js`: Handles the PeerJS setup for peer-to-peer multiplayer connections.
 *   `gun_data.js`: This file contains the data for the different weapons available in the game.
-*   `debug.js`: A simple utility for displaying real-time debug information on screen.
 *   `PointerLockControls.js`: A Three.js addon used to implement first-person camera controls, loaded via the import map.
 *   `textures/`: This directory contains texture files used for the game's materials (e.g., `grass.jpg`, `skybox.jpg`).
 
@@ -32,7 +31,6 @@ This project is a 3D first-person shooter (FPS) game built with modern web techn
 *   **UI Elements:** The game displays the player's ammo count and health bar.
 *   **Nametags:** The game can display a player's nametag.
 *   **Pause Menu:** The player can pause the game by pressing the 'Escape' key, which brings up a menu with options to resume or view keybindings.
-*   **Debug Panel:** Pressing the backquote (`) key toggles a debug panel showing player, object, and network connection info.
 *   **Damage and Respawn:** The player can take damage from physics objects and will respawn upon death.
 *   **Dynamic Objects:** The boxes in the scene are dynamic objects that can be pushed around by the player and other objects. Bullets can also create dents on the boxes they hit.
 *   **Bullet Types:** The game features different bullet types, including standard bullets, pellets for the shotgun, and rockets for the rocket launcher.
@@ -40,20 +38,45 @@ This project is a 3D first-person shooter (FPS) game built with modern web techn
 
 ## How to Run the Game
 
-1.  Serve the project directory using a local web server.
-2.  Open the served `index.html` file in your web browser (e.g., `http://localhost:8000`).
-3.  Choose between single-player or multiplayer mode.
-4.  Click on the screen to lock the pointer and enable controls.
-5.  Use the mouse to look around, 'W', 'A', 'S', 'D' to move, and 'Space' to jump.
-6.  Left-click to shoot.
-7.  Use the number keys (1, 2, 3) to switch between weapons.
-8.  Press 'R' to reload your weapon.
+1. Serve the project directory using a local web server.
+2. Open the served `index.html` file in your web browser (e.g., `http://localhost:8000`).
+3. Choose between single-player or multiplayer mode.
+4. Click on the screen to lock the pointer and enable controls.
+5. Use the mouse to look around, 'W', 'A', 'S', 'D' to move, and 'Space' to jump.
+6. Left-click to shoot.
+7. Use the number keys (1, 2, 3) to switch between weapons.
+8. Press 'R' to reload your weapon.
 
 ## Testing Multiplayer
 To test the multiplayer functionality, you can open the game in two separate browser tabs or windows.
 1.  In the first tab, enter a nametag and click "Multiplayer".
-2.  Click "Host Game". Your unique Host ID will be displayed.
-3.  Copy the Host ID.
+2.  Click "Host Game". A 4-letter Room Code will be generated and displayed.
+3.  Copy the Room Code.
 4.  In the second tab, enter a different nametag and click "Multiplayer".
-5.  Paste the Host ID from the first tab into the "Enter Host ID" field and click "Join Game".
+5.  Click "Join Game", paste the Room Code from the first tab into the input field, and click "Connect".
 6.  Once the second player has joined, the host (the first tab) can click "Start Game" to launch the session for both players.
+
+## Deploying the Matchmaking Server
+
+The game uses a lightweight matchmaking server to handle room codes. This server needs to be hosted online for players to connect from different networks. The following steps guide you through deploying it for free on Back4App.
+
+### Prerequisites
+*   A [GitHub](https://github.com/) account.
+*   A [Back4App](https://www.back4app.com/) account.
+
+### Deployment Steps
+1.  **Create `package.json`**: Make sure you have a `package.json` file in your project root that defines the `ws` dependency and a `start` script.
+2.  **Install Dependencies**: Open a terminal in your project folder and run `npm install`. This creates a `node_modules` folder and a `package-lock.json` file.
+3.  **Push to GitHub**: Create a new GitHub repository and push your project to it. Make sure to include `server.js`, `package.json`, and `package-lock.json`.
+4.  **Deploy on Back4App**:
+    *   Log in to your Back4App account and go to your dashboard.
+    *   Click on "NEW APP" and select "Containers as a Service".
+    *   Connect your GitHub account and select the repository containing your game server.
+    *   Give your app a name (e.g., `pew-shoot-server`). Back4App will automatically detect it's a Node.js app.
+    *   The "Root Directory" should be `/` and the "Dockerfile" path can be left blank.
+    *   Click "Create App". Back4App will build and deploy your server.
+5.  **Configure Client**:
+    *   Once deployed, Back4App will provide you with a public URL (e.g., `pew-shoot-server-p123.b4a.run`).
+    *   Copy this URL.
+    *   Open `matchmaking.js` and replace the placeholder `'pew-shoot-matchmaking.onrender.com'` with your new Back4App URL.
+    *   Your game client will now be able to connect to your live matchmaking server.

@@ -1,0 +1,12 @@
+{
+  "name": "pew-shoot-matchmaking",
+  "version": "1.0.0",
+  "description": "Matchmaking server for Pew Shoot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
+}

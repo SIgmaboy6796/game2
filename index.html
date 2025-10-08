@@ -73,7 +73,7 @@
             background-color: green;
         }
         #lobby {
-            display: none;
+            display: none; /* Initially hidden */
             padding: 20px;
         }
         #debugPanel {
@@ -92,10 +92,6 @@
             z-index: 1000;
             white-space: pre;
         }
-        #playerList .list-group-item,
-        #pendingConnectionList .list-group-item {
-            color: black; /* Make lobby text readable */
-        }
     </style>
 </head>
 <body>
@@ -109,26 +105,33 @@
         <button id="multiplayerButton" class="btn btn-success">Multiplayer</button>
     </div>
 
-    <div id="lobby" class="container mt-5">
-        <h2>Lobby</h2>
-        <button id="hostButton" class="btn btn-primary">Host a New Game</button>
-        <button id="refreshGamesButton" class="btn btn-info ml-2">Refresh List</button>
+    <div id="lobby" class="container mt-5 text-center">
+        <h2>Multiplayer</h2>
+        <div id="lobby-choice">
+            <button id="hostChoiceButton" class="btn btn-primary btn-lg">Host Game</button>
+            <button id="joinChoiceButton" class="btn btn-success btn-lg">Join Game</button>
+            <button id="backToMainButton" class="btn btn-secondary mt-3">Back to Main Menu</button>
+        </div>
         
-        <div id="host-info" class="mt-3" style="display: none;">
-            <p>Your game is hosted! Your room code is: <strong id="hostIdDisplay" class="h4"></strong></p>
-            <div id="pending-connections-container" class="mt-3" style="display: none;">
-                <h5>Incoming Connections:</h5>
-                <ul id="pendingConnectionList" class="list-group text-left"></ul>
+        <div id="host-lobby" class="mt-3" style="display: none;">
+            <h3>You are the Host</h3>
+            <p>Share this ID with your friends:</p>
+            <div class="input-group mb-3">
+                <input type="text" id="hostIdDisplay" class="form-control" readonly placeholder="Waiting for ID...">
+                <div class="input-group-append">
+                    <button class="btn btn-outline-secondary" id="copyIdButton">Copy</button>
+                </div>
             </div>
-            <h3>Players in Lobby:</h3>
+            <h4>Players in Lobby:</h4>
             <ul id="playerList" class="list-group mb-3"></ul>
             <button id="startGameButton" class="btn btn-success btn-lg">Start Game</button>
         </div>
-        <hr>
-        <h3>Available Games:</h3>
-        <ul id="gameList" class="list-group">
-            <!-- Game list will be populated here -->
-        </ul>
+
+        <div id="join-lobby" class="mt-3" style="display: none;">
+            <h3>Join a Game</h3>
+            <input type="text" id="joinIdInput" class="form-control mb-2" placeholder="Enter Room Code">
+            <button id="connectToHostButton" class="btn btn-success">Connect</button>
+        </div>
     </div>
 
     <div id="game-ui" style="display: none;">
@@ -160,8 +163,6 @@
         </div>
     </div>
 
-    <div id="debugPanel"></div>
-
     <script type="importmap">
         { "imports": {
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
@@ -173,35 +174,38 @@
     <script type="module">
         import * as THREE from 'three';
         import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
-        import { init as initGame, players, getMyPlayerId } from '/game.js';
-        import { initNetwork, connectToHost, sendData, getConnections, getMyId, setAsHost, acceptConnection, declineConnection } from '/network.js';
-        import { logPlayers, logObjects, logConnections } from '/debug.js';
+        import { init as initGame, players } from '/game.js';
+        import { initNetwork, connectToHost, sendData, getConnections, getMyId, setAsHost, hostGame, getHostPeerId } from '/network.js';
 
         const mainMenu = document.getElementById('mainMenu');
         const lobby = document.getElementById('lobby');
         const gameUi = document.getElementById('game-ui');
 
+        // Main Menu
         const nametagInput = document.getElementById('nametagInput');
         const singlePlayerButton = document.getElementById('singlePlayerButton');
         const multiplayerButton = document.getElementById('multiplayerButton');
 
-        const hostButton = document.getElementById('hostButton');
-        const hostInfo = document.getElementById('host-info');
-        const hostIdDisplay = document.getElementById('hostIdDisplay');
-        const startGameButton = document.getElementById('startGameButton');
-
-        const gameList = document.getElementById('gameList');
-        const refreshGamesButton = document.getElementById('refreshGamesButton');
+        // Lobby elements
+        const lobbyChoice = document.getElementById('lobby-choice');
+        const hostLobby = document.getElementById('host-lobby');
+        const joinLobby = document.getElementById('join-lobby');
 
         const playerList = document.getElementById('playerList');
         const networkStatus = document.getElementById('networkStatus');
-        const debugPanel = document.getElementById('debugPanel');
-
-        const pendingConnectionsContainer = document.getElementById('pending-connections-container');
-        const pendingConnectionList = document.getElementById('pendingConnectionList');
+        
+        const hostChoiceButton = document.getElementById('hostChoiceButton');
+        const joinChoiceButton = document.getElementById('joinChoiceButton');
+        const backToMainButton = document.getElementById('backToMainButton');
+        const hostIdDisplay = document.getElementById('hostIdDisplay');
+        const copyIdButton = document.getElementById('copyIdButton');
+        const startGameButton = document.getElementById('startGameButton');
+        const joinIdInput = document.getElementById('joinIdInput');
+        const connectToHostButton = document.getElementById('connectToHostButton');
 
         let nametag = 'Player';
         let isHost = false;
+        let myPeerId = null; // Variable to store our own peer ID
         let isMultiplayer = false;
         let gameScene = null; // Will hold the THREE.Scene instance
         let shootHandler = null; // Will hold the handleShoot function
@@ -237,9 +241,7 @@
         function initLobby() {
             nametag = nametagInput.value.trim() || `Player-${Math.floor(1000 + Math.random() * 9000)}`;
             mainMenu.style.display = 'none';
-            lobby.style.display = 'block';
-            // Initialize network as soon as we enter the lobby.
-            // This makes us ready to either host or join.
+            lobby.style.display = 'flex'; // Use flex for centering
             initNetwork(nametag);
         }
 
@@ -255,53 +257,66 @@
 
         multiplayerButton.addEventListener('click', initLobby);
 
-        hostButton.addEventListener('click', () => {
+        hostChoiceButton.addEventListener('click', () => {
             console.log('[UI] Host button clicked.');
             isHost = true;
             setAsHost(); // Tell the network layer that we are the host.
-            hostButton.style.display = 'none';
-            refreshGamesButton.style.display = 'none';
-            document.getElementById('gameList').style.display = 'none';
-            hostInfo.style.display = 'block';
-            pendingConnectionsContainer.style.display = 'block';
+            lobbyChoice.style.display = 'none';
+            hostLobby.style.display = 'block'; 
+            showNetworkStatus('Requesting room code from server...');
+            // If peer is ready, host immediately. Otherwise, the 'peer-ready' event will trigger it.
+            if (myPeerId) hostGame(myPeerId);
             updatePlayerList([{ nametag }]);
         });
 
-        refreshGamesButton.addEventListener('click', () => {
-            sendData({ type: 'get-games' });
+        joinChoiceButton.addEventListener('click', () => {
+            lobbyChoice.style.display = 'none';
+            joinLobby.style.display = 'block';
+            joinIdInput.focus();
         });
 
-        gameList.addEventListener('click', (event) => {
-            const target = event.target.closest('.join-btn');
-            if (!target) return;
-            const roomCode = target.dataset.roomCode;
-            sendData({ type: 'get-peer-id', roomCode });
+        backToMainButton.addEventListener('click', () => {
+            lobby.style.display = 'none';
+            mainMenu.style.display = 'block';
+            // TODO: Should also disconnect from peerjs if connected
+        });
+
+        copyIdButton.addEventListener('click', () => {
+            navigator.clipboard.writeText(hostIdDisplay.value).then(() => {
+                showNetworkStatus('Room Code copied to clipboard!');
+            });
+        });
+
+        connectToHostButton.addEventListener('click', () => {
+            const roomCode = joinIdInput.value.trim().toUpperCase();
+            if (roomCode && roomCode.length === 4) {
+                showNetworkStatus(`Looking up room ${roomCode}...`);
+                getHostPeerId(roomCode); // Ask matchmaking server for the host's real PeerJS ID
+            } else {
+                showNetworkStatus('Please enter a valid 4-letter room code.', true);
+            }
         });
 
         startGameButton.addEventListener('click', () => {
             console.log('[UI] Start Game button clicked by host.');
-            // Notify other players to start the game
             sendData({ type: 'start-game' });
             launchMultiplayerGame();
         });
 
-        pendingConnectionList.addEventListener('click', (event) => {
-            const target = event.target;
-            const peerId = target.dataset.peerId;
-            if (!peerId) return;
-
-            if (target.classList.contains('accept-btn')) {
-                console.log(`[UI] Accepting connection from ${peerId}`);
-                acceptConnection(peerId);
-            } else if (target.classList.contains('decline-btn')) {
-                console.log(`[UI] Declining connection from ${peerId}`);
-                declineConnection(peerId);
-            }
-            document.getElementById(`pending-${peerId}`).remove();
-        });
-
         // --- GLOBAL NETWORKING LISTENERS ---
         // These are set up once on page load to prevent race conditions.
+
+        window.addEventListener('matchmaking-connected', () => {
+            showNetworkStatus('Connected to matchmaking service.');
+        });
+
+        window.addEventListener('matchmaking-error', (e) => {
+            showNetworkStatus(e.detail.message, true);
+        });
+
+        window.addEventListener('matchmaking-disconnected', () => {
+            showNetworkStatus('Disconnected from matchmaking service.', true);
+        });
 
         function createPlayer(peerId, nametag) {
             // This function is called by network events.
@@ -347,19 +362,27 @@
             }
         });
 
-        window.addEventListener('pending-connection', (event) => {
-            const { peerId, nametag } = event.detail;
-            console.log(`[UI] "pending-connection" event for ${peerId} (${nametag})`);
-            const li = document.createElement('li');
-            li.id = `pending-${peerId}`;
-            li.className = 'list-group-item d-flex justify-content-between align-items-center';
-            li.innerHTML = `
-                <span>${nametag} (${peerId})</span>
-                <div>
-                    <button class="btn btn-sm btn-success accept-btn" data-peer-id="${peerId}">Accept</button>
-                    <button class="btn btn-sm btn-danger decline-btn" data-peer-id="${peerId}">Decline</button>
-                </div>`;
-            pendingConnectionList.appendChild(li);
+        // This event is dispatched from network.js for the host when a new player's connection is open.
+        window.addEventListener('host-player-joined', (event) => {
+            console.log('[UI] "host-player-joined" event:', event.detail);
+            // The 'player-list-updated' event will be fired separately to update the UI for everyone.
+        });
+
+        window.addEventListener('peer-ready', (event) => {
+            console.log('[UI] "peer-ready" event received.', event.detail);
+            myPeerId = event.detail.peerId; // Store our ID
+            // If we are already on the host screen, it means we were waiting for the peer ID.
+            // Now we can request the room code.
+            if (isHost && hostLobby.style.display === 'block') {
+                hostGame(myPeerId);
+            }
+        });
+
+        window.addEventListener('game-hosted-success', (e) => {
+            const { roomCode } = e.detail;
+            if (isHost) {
+                hostIdDisplay.value = roomCode;
+            }
         });
 
         window.addEventListener('data-received', (event) => {
@@ -368,8 +391,14 @@
             if (!data.type) return;
 
             if (data.type === 'state') {
+                // This logic should be in game.js, but for now, we handle it here.
+                // When state updates come in, find the corresponding player and update their position.
+                // This is for remote players. The local player's position is handled by the physics engine.
                 const player = players[peerId];
-                if (player) player.position.copy(data.position);
+                if (player) {
+                    player.position.copy(data.position);
+                    player.quaternion.copy(data.quaternion);
+                }
             } else if (data.type === 'shoot') {
                 if (shootHandler) shootHandler(new THREE.Vector3().copy(data.direction), data.weapon);
             } else if (data.type === 'new-player') {
@@ -378,12 +407,10 @@
                 }
             } else if (data.type === 'welcome') {
                 // This is for the newly joined client
-                hostButton.style.display = 'none';
-                refreshGamesButton.style.display = 'none';
-                document.getElementById('gameList').style.display = 'none';
-                hostInfo.innerHTML = '<p>Connected to lobby. Waiting for host to start...</p>';
+                joinLobby.style.display = 'none';
+                hostLobby.style.display = 'block';
+                hostLobby.innerHTML = '<h3>Connected to lobby. Waiting for host to start...</h3>';
                 data.players.forEach(p => {
-                    // Don't create a player for ourselves. getMyId() is from network.js
                     if (p.peerId !== getMyId() && !players[p.peerId]) {
                         createPlayer(p.peerId, p.nametag);
                     }
@@ -396,39 +423,28 @@
             else if (data.type === 'start-game') {
                 // This is for clients when the host starts the game
                 dispatchNetworkEvent('game-started');
-            }
-            else if (data.type === 'game-hosted') {
-                hostIdDisplay.textContent = data.roomCode;
-            }
-            else if (data.type === 'game-list') {
-                gameList.innerHTML = '';
-                if (data.games.length === 0) {
-                    gameList.innerHTML = '<li class="list-group-item">No active games found. Host one!</li>';
-                } else {
-                    data.games.forEach(game => {
-                        const li = document.createElement('li');
-                        li.className = 'list-group-item d-flex justify-content-between align-items-center';
-                        li.innerHTML = `<span>${game.nametag}'s Game (Code: ${game.roomCode})</span>
-                                        <button class="btn btn-sm btn-success join-btn" data-room-code="${game.roomCode}">Join</button>`;
-                        gameList.appendChild(li);
-                    });
+            } else if (data.type === 'player-left') {
+                // This is for clients when another player leaves
+                // The 'player-disconnected' event is already handled globally
+                // but we might want to update the player list in the lobby if the game hasn't started.
+                if (lobby.style.display === 'block' && !isHost) {
+                    // A better approach is for the host to send an updated player list.
                 }
-            } else if (data.type === 'peer-id-response') {
-                showNetworkStatus(`Joining game ${data.roomCode}...`);
-                connectToHost(data.peerId);
+            } else if (data.type === 'player-hit') {
+                // This is received by the player who was hit
+                if (data.targetId === getMyId()) {
+                    // Find the player's body in game.js and apply damage
+                    // This requires exporting the playerBody from game.js or a function to apply damage
+                    console.log(`I've been hit by ${peerId} for ${data.damage} damage!`);
+                    // Example: applyDamage(data.damage);
+                }
             }
-
         });
 
         window.addEventListener('player-list-updated', (event) => {
             console.log('[UI] "player-list-updated" event:', event.detail);
             updatePlayerList(event.detail.players);
             if (!isHost) startGameButton.style.display = 'none';
-        });
-
-        window.addEventListener('game-started', () => {
-            console.log('[UI] "game-started" event received. Launching multiplayer game.');
-            launchMultiplayerGame();
         });
 
         window.addEventListener('player-disconnected', (event) => {
@@ -440,14 +456,14 @@
             if (players[peerId] && gameScene) {
                 gameScene.remove(players[peerId].mesh);
                 delete players[peerId];
+            } else {
+                console.log(`Player ${peerId} not in game scene, but disconnected.`);
             }
-            showNetworkStatus(`Player ${event.detail.peerId} disconnected.`, true);
+            showNetworkStatus(`A player disconnected.`, true);
             if (isHost && lobby.style.display === 'block') {
                 // Host needs to update everyone's player list
                 const connections = getConnections();
-                const players = connections.map(c => ({ nametag: c.metadata.nametag }));
-                players.push({ nametag });
-                sendData({ type: 'player-list', players });
+                const players = connections.map(c => ({ nametag: c.metadata.nametag })).concat({ nametag });
                 updatePlayerList(players);
             }
         });
@@ -462,22 +478,22 @@
             showNetworkStatus(`Error: ${event.detail.error.type || 'Connection failed'}`, true);
         });
 
-        // --- DEBUGGING ---
-        let debugVisible = false;
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'Backquote') { // ` key
-                debugVisible = !debugVisible;
-                debugPanel.style.display = debugVisible ? 'block' : 'none';
-                if (debugVisible) {
-                    updateDebugPanel();
-                }
+        window.addEventListener('game-started', () => {
+            console.log('[UI] "game-started" event received. Launching multiplayer game.');
+            launchMultiplayerGame();
+        });
+
+        window.addEventListener('host-peer-id-received', (e) => {
+            const { peerId } = e.detail;
+            if (peerId) {
+                showNetworkStatus(`Host found. Connecting...`);
+                connectToHost(peerId);
+            } else {
+                showNetworkStatus('Could not find a game with that room code.', true);
             }
         });
 
-        function updateDebugPanel() {
-            debugPanel.textContent = `${logPlayers(true)}\n\n${logObjects(true)}\n\n${logConnections(true)}`;
-            if (debugVisible) requestAnimationFrame(updateDebugPanel);
-        }
+
     </script>
 </body>
 </html>

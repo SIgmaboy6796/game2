@@ -1,16 +1,13 @@
 import Peer from 'peerjs';
 
 let peer;
-let matchmakingSocket;
 let connections = [];
 let isHostGlobal = false;
-const pendingConnections = new Map();
 let myId = null;
 let myNametag = '';
+let ws; // WebSocket for matchmaking
+let isConnectingToMatchmaker = false;
 
-// IMPORTANT: Replace this with your matchmaking server's address.
-const MATCHMAKING_SERVER_URL = 'ws://localhost:8080'; // For local testing
-// const MATCHMAKING_SERVER_URL = 'wss://your-production-server.com'; // For production
 
 function dispatchNetworkEvent(name, detail) {
     window.dispatchEvent(new CustomEvent(name, { detail }));
@@ -49,40 +46,54 @@ export function setAsHost() {
 
 export function initNetwork(nametag) {
     myNametag = nametag;
+    connectToMatchmakingServer();
+    initializePeer();
+}
 
-    // 1. Connect to the matchmaking server
-    console.log(`[Network] Connecting to matchmaking server at ${MATCHMAKING_SERVER_URL}...`);
-    matchmakingSocket = new WebSocket(MATCHMAKING_SERVER_URL);
-    let peerInitialized = false;
+function connectToMatchmakingServer() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return; // Already connected or connecting
+    }
+    isConnectingToMatchmaker = true;
+    // Use wss:// for secure connections (like on Back4App/Render), ws:// for local
+    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    
+    // *** IMPORTANT: Make sure this points to your deployed server address ***
+    const host = window.location.host.includes('localhost') 
+        ? 'localhost:8080' 
+        : 'pew-shoot-matchmaking.onrender.com'; // Replace with your Back4App URL e.g. 'pew-shoot.b4a.io'
+    
+    ws = new WebSocket(`${protocol}${host}`);
 
-    matchmakingSocket.onclose = () => {
-        console.log('[Network] Disconnected from matchmaking server.');
+    ws.onopen = () => {
+        isConnectingToMatchmaker = false;
+        console.log('[Network] Connected to matchmaking server.');
+        dispatchNetworkEvent('matchmaking-connected');
     };
 
-    matchmakingSocket.onopen = () => {
-        console.log('[Network] Successfully connected to matchmaking server.');
-        // Now that we're connected, initialize PeerJS
-        initializePeer();
-        // Request the initial game list. It's better to do this here
-        // to ensure the socket is open before we send.
-        if (matchmakingSocket.readyState === WebSocket.OPEN) {
-            matchmakingSocket.send(JSON.stringify({ type: 'get-games' }));
-        }
-        peerInitialized = true;
-    };
-
-    matchmakingSocket.onmessage = (event) => {
+    ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        // Forward server messages to the UI
-        dispatchNetworkEvent('data-received', { peerId: 'server', data });
+        console.log('[Network] Received from matchmaking:', data);
+
+        if (data.type === 'game-hosted') {
+            dispatchNetworkEvent('game-hosted-success', { roomCode: data.roomCode });
+        } else if (data.type === 'peer-id-response') {
+            dispatchNetworkEvent('host-peer-id-received', { peerId: data.peerId });
+        } else if (data.type === 'error') {
+            dispatchNetworkEvent('matchmaking-error', { message: data.message });
+        }
     };
 
-    matchmakingSocket.onerror = (error) => {
-        console.error('Matchmaking WebSocket error:', error);
-        // Make the error more specific and user-friendly.
-        const detail = { error: { type: 'matchmaking_server_error', message: 'Could not connect to the matchmaking server. Is it running?' } };
-        dispatchNetworkEvent('connection-error', detail);
-        // Don't try to initialize PeerJS if we can't even connect to the matchmaking server.
+    ws.onclose = () => {
+        isConnectingToMatchmaker = false;
+        console.log('[Network] Disconnected from matchmaking server.');
+        dispatchNetworkEvent('matchmaking-disconnected');
+    };
+
+    ws.onerror = (error) => {
+        isConnectingToMatchmaker = false;
+        console.error('[Network] WebSocket error:', error);
+        dispatchNetworkEvent('matchmaking-error', { message: 'Could not connect to matchmaking server.' });
     };
 }
 
@@ -106,19 +117,26 @@ function initializePeer() {
     peer.on('open', (id) => {
         myId = id;
         console.log(`[Network] Peer object created with ID: ${id}. Ready to host or join.`);
-        if (isHostGlobal) {
-            // If we decided to host before PeerJS was ready, announce the game now.
-            sendData({ type: 'host-game', peerId: myId, nametag: myNametag });
-        }
+        // Notify the UI that the peer is ready and pass it the ID.
+        dispatchNetworkEvent('peer-ready', { peerId: id });
     });
 
     // This listener is for the HOST to accept incoming connections.
     peer.on('connection', (connection) => {
-        console.log(`[Host] Incoming connection from ${connection.peer}.`);
-        pendingConnections.set(connection.peer, connection);
-        // Ensure metadata and nametag exist before dispatching.
-        const nametag = (connection.metadata && connection.metadata.nametag) ? connection.metadata.nametag : 'Guest';
-        dispatchNetworkEvent('pending-connection', { peerId: connection.peer, nametag: nametag });
+        if (isHostGlobal) {
+            console.log(`[Host] Auto-accepting incoming connection from ${connection.peer}.`);
+            // The 'open' event will fire when the connection is established and ready for data.
+            connection.on('open', () => {
+                handleNewConnection(connection);
+                connection.reliable = true;
+            });
+            // Set up listeners immediately to handle the connection process.
+            setupConnectionListeners(connection);
+        } else {
+            // If we are not the host, we should not be receiving connections.
+            console.warn(`Received unexpected connection from ${connection.peer} as a client. Closing it.`);
+            connection.close();
+        }
     });
 
     peer.on('error', onPeerError);
@@ -146,68 +164,37 @@ export function connectToHost(hostId) {
     setupConnectionListeners(conn);
 }
 
+function handleNewConnection(connection) {
+    console.log(`[Host] Connection to ${connection.peer} is now open.`);
 
-export function acceptConnection(peerId) {
-    const connection = pendingConnections.get(peerId);
-    if (!connection) {
-        console.error(`[Host] No pending connection found for peer ID: ${peerId}`);
-        return;
-    }
+    // Now that the connection is open, add it to our active connections.
+    connections.push(connection);
+    // This event is for the host's UI.
+    dispatchNetworkEvent('host-player-joined', { peerId: connection.peer, metadata: connection.metadata });
 
-    // The 'open' event will fire when the connection is established and ready for data.
-    connection.on('open', () => {
-        console.log(`[Host] Connection to ${connection.peer} is now open.`);
+    // 1. Welcome the new player with the list of existing players.
+    const playerListForNewcomer = connections.map(c => ({ peerId: c.peer, nametag: c.metadata.nametag }));
+    playerListForNewcomer.push({ peerId: myId, nametag: myNametag });
+    console.log(`[Host] Sending 'welcome' to new player ${connection.peer}`);
+    connection.send({ type: 'welcome', players: playerListForNewcomer });
 
-        // Now that the connection is open, add it to our active connections and set up listeners.
-        setupConnectionListeners(connection);
-        connections.push(connection);
-        // This event is for the host's UI, if needed.
-        dispatchNetworkEvent('host-player-joined', { peerId: connection.peer, metadata: connection.metadata });
+    // 2. Inform all OTHER players about the new player.
+    console.log(`[Host] Announcing 'new-player' ${connection.peer} to others.`);
+    sendData({ type: 'new-player', peerId: connection.peer, nametag: connection.metadata.nametag }, [connection.peer]); // Exclude the new player
 
-        // 1. Welcome the new player with the list of existing players.
-        const playerListForNewcomer = connections.map(c => ({ peerId: c.peer, nametag: c.metadata.nametag }));
-        playerListForNewcomer.push({ peerId: myId, nametag: myNametag });
-        console.log(`[Host] Sending 'welcome' to new player ${connection.peer}`);
-        connection.send({ type: 'welcome', players: playerListForNewcomer });
-
-        // 2. Inform all OTHER players about the new player.
-        console.log(`[Host] Announcing 'new-player' ${connection.peer} to others.`);
-        sendData({ type: 'new-player', peerId: connection.peer, nametag: connection.metadata.nametag }, [connection.peer]); // Exclude the new player
-
-        // 3. Update the lobby UI for the host.
-        const playerListForLobby = connections.map(c => ({ nametag: c.metadata.nametag })).concat({ nametag: myNametag });
-        dispatchNetworkEvent('player-list-updated', { players: playerListForLobby });
-    });
-
-    pendingConnections.delete(peerId);
-}
-
-export function declineConnection(peerId) {
-    const connection = pendingConnections.get(peerId);
-    if (connection) connection.close(); // This will trigger the 'close' event on the client
-    pendingConnections.delete(peerId);
+    // 3. Update the lobby UI for the host.
+    const playerListForLobby = connections.map(c => ({ nametag: c.metadata.nametag })).concat({ nametag: myNametag });
+    dispatchNetworkEvent('player-list-updated', { players: playerListForLobby });
 }
 
 export function sendData(data, excludePeerIds = []) {
-    // Check if the message is for the matchmaking server
-    if (['host-game', 'get-games', 'get-peer-id'].includes(data.type)) {
-        if (matchmakingSocket && matchmakingSocket.readyState === WebSocket.OPEN) {
-            matchmakingSocket.send(JSON.stringify(data));
-        } else {
-            const errorMsg = 'Matchmaking server not connected.';
-            console.error(errorMsg);
-            // Also dispatch an event so the UI can show this error to the user.
-            const detail = { error: { type: 'matchmaking_server_error', message: errorMsg } };
-            dispatchNetworkEvent('connection-error', detail);
+    // Send a P2P message to other players
+    const excluded = new Set(excludePeerIds);
+    connections.forEach(conn => {
+        if (conn && conn.open && !excluded.has(conn.peer)) {
+            conn.send(data);
         }
-    } else { // Otherwise, it's a P2P message for other players
-        const excluded = new Set(excludePeerIds);
-        connections.forEach(conn => {
-            if (conn && conn.open && !excluded.has(conn.peer)) {
-                conn.send(data);
-            }
-        });
-    }
+    });
 }
 
 export function getConnections() {
@@ -216,4 +203,23 @@ export function getConnections() {
 
 export function getMyId() {
     return myId;
+}
+
+// --- Matchmaking Functions ---
+
+export const hostGame = (peerId) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'host-game', peerId: peerId }));
+    } else {
+        console.error('[Network] WebSocket not connected. Cannot host game.');
+        dispatchNetworkEvent('matchmaking-error', { message: 'Not connected to matchmaking server.' });
+    }
+}
+export const getHostPeerId = (roomCode) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'get-peer-id', roomCode }));
+    } else {
+        console.error('[Network] WebSocket not connected. Cannot get host peer ID.');
+        dispatchNetworkEvent('matchmaking-error', { message: 'Not connected to matchmaking server.' });
+    }
 }

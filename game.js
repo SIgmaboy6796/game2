@@ -6,6 +6,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { weapons } from './gun_data.js'; // This was missing from the context, but is fine.
 import { sendData } from './network.js';
 import { getMyId } from './network.js';
+import { InstancedBufferAttribute } from 'three';
 
 export const objectsToUpdate = [];
 export const players = {};
@@ -66,6 +67,9 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     let currentWeaponName = 'pistol';
     let currentWeapon = weapons[currentWeaponName];
     const unlockedWeapons = { 'pistol': true, 'shotgun': false, 'rocketLauncher': false };
+    const activeRockets = []; // To track rockets for smoke trails
+    const smokeParticles = []; // To manage smoke particles
+
     let canShoot = true;
     let isReloading = false;
 
@@ -517,6 +521,39 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
             player.mesh.quaternion.slerp(player.quaternion, 0.1);
         }
 
+        // Update rocket orientation
+        activeRockets.forEach(rocket => {
+            if (rocket.body.velocity.lengthSquared() > 0.1) {
+                const direction = new THREE.Vector3().copy(rocket.body.velocity).normalize();
+                // Re-orient the rocket to face the direction of travel
+                // The default model orientation is along the Y-axis.
+                rocket.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            }
+        });
+
+        // Update smoke particles
+        for (let i = smokeParticles.length - 1; i >= 0; i--) {
+            const particle = smokeParticles[i];
+            particle.material.opacity -= deltaTime * 0.5; // Fade out
+            if (particle.material.opacity <= 0) {
+                scene.remove(particle);
+                smokeParticles.splice(i, 1);
+            }
+        }
+
+        activeRockets.forEach(rocket => {
+            createSmokeParticle(rocket.mesh.position);
+        });
+
+        // Update smoke particles
+        for (let i = smokeParticles.length - 1; i >= 0; i--) {
+            const particle = smokeParticles[i];
+            particle.material.opacity -= deltaTime * 0.5; // Fade out
+            if (particle.material.opacity <= 0) {
+                scene.remove(particle);
+                smokeParticles.splice(i, 1);
+            }
+        }
         renderer.render(scene, camera);
     }
 
@@ -610,18 +647,41 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         startPosition.add(direction.clone().multiplyScalar(2.0));
 
         const bulletBody = new CANNON.Body({
-            mass: 0.1, // A small mass for the bullet
+            mass: bulletData.type === 'rocket' ? 0 : 0.1, // Kinematic rockets, dynamic bullets
             shape: new CANNON.Sphere(bulletData.radius),
             position: new CANNON.Vec3().copy(startPosition),
             material: bulletMaterial,
         });
+        if (bulletData.type === 'rocket') {
+            bulletBody.type = CANNON.Body.KINEMATIC;
+        }
         bulletBody.collisionFilterGroup = BULLET;
+
         bulletBody.collisionFilterMask = BOX; // Bullets only collide with boxes
 
-        const bulletMesh = new THREE.Mesh(
-            new THREE.SphereGeometry(bulletData.radius, 8, 8),
-            new THREE.MeshBasicMaterial({ color: 0xffff00 })
-        );
+        let bulletMesh;
+        if (bulletData.type === 'rocket') {
+            bulletMesh = new THREE.Group();
+            const body = new THREE.Mesh(
+                new THREE.CylinderGeometry(bulletData.radius * 0.5, bulletData.radius, bulletData.radius * 4, 12),
+                new THREE.MeshStandardMaterial({ color: 0xcccccc })
+            );
+            const tip = new THREE.Mesh(
+                new THREE.ConeGeometry(bulletData.radius * 0.5, bulletData.radius, 12),
+                new THREE.MeshStandardMaterial({ color: 0xff0000 })
+            );
+            tip.position.y = bulletData.radius * 2;
+            bulletMesh.add(body);
+            bulletMesh.add(tip);
+            // Orient the rocket to point in the direction of travel
+            bulletMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        } else {
+            bulletMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(bulletData.radius, 8, 8),
+                new THREE.MeshBasicMaterial({ color: 0xffff00 })
+            );
+        }
+
         bulletMesh.position.copy(startPosition);
 
         bulletBody.velocity.set(
@@ -638,11 +698,19 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
             explosionImpulse: bulletData.explosionImpulse
         };
 
+        if (bulletObject.type === 'rocket') {
+            activeRockets.push(bulletObject);
+        }
+
         bulletBody.addEventListener('collide', (event) => {
             if (bulletObject.type === 'rocket') {
                 handleRocketExplosion(bulletBody.position, bulletObject.explosionRadius, bulletObject.explosionImpulse);
             }
             handleBulletCollision(event, bulletObject);
+            // Remove rocket from active list so it stops producing smoke
+            const rocketIndex = activeRockets.indexOf(bulletObject);
+            if (rocketIndex > -1) activeRockets.splice(rocketIndex, 1);
+
         });
 
         world.addBody(bulletBody);
@@ -650,6 +718,19 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         objectsToUpdate.push(bulletObject);
     }
 
+    // Add a function to create smoke particles for rockets
+    function createSmokeParticle(position) {
+        const smokeGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+        const smokeMaterial = new THREE.MeshBasicMaterial({
+            color: 0x888888,
+            transparent: true,
+            opacity: 0.5
+        });
+        const particle = new THREE.Mesh(smokeGeometry, smokeMaterial);
+        particle.position.copy(position);
+        scene.add(particle);
+        smokeParticles.push(particle);
+    }
     function handleBulletCollision(event, bulletObject) {
         const bulletBody = bulletObject.body;
         const contact = event.contact;

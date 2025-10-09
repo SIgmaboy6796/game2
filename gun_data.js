@@ -51,7 +51,23 @@ export const weapons = {
         reloadTime: 2000,
     },
     rocketLauncher: {
-        model: new THREE.BoxGeometry(0.2, 0.2, 1.0),
+        model: (() => {
+            const group = new THREE.Group();
+            // Main tube
+            const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.0, 16), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+            tube.rotation.x = Math.PI / 2;
+            group.add(tube);
+            // Scope
+            const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.2, 12), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+            scope.position.set(-0.1, 0.1, -0.2);
+            scope.rotation.z = Math.PI / 2;
+            group.add(scope);
+            // Handle
+            const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.1), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+            handle.position.set(0, -0.15, -0.1);
+            group.add(handle);
+            return group;
+        })(),
         position: new THREE.Vector3(0.25, -0.2, -0.5),
         bullet: {
             radius: 0.2,

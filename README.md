@@ -67,16 +67,15 @@ The game uses a lightweight matchmaking server to handle room codes. This server
 ### Deployment Steps
 1.  **Create `package.json`**: Make sure you have a `package.json` file in your project root that defines the `ws` dependency and a `start` script.
 2.  **Install Dependencies**: Open a terminal in your project folder and run `npm install`. This creates a `node_modules` folder and a `package-lock.json` file.
-3.  **Push to GitHub**: Create a new GitHub repository and push your project to it. Make sure to include `server.js`, `package.json`, and `package-lock.json`.
+3.  **Push to GitHub**: Create a new GitHub repository and push your project to it. Make sure to include `server.js`, `package.json`, `package-lock.json`, and `Dockerfile`.
 4.  **Deploy on Back4App**:
     *   Log in to your Back4App account and go to your dashboard.
     *   Click on "NEW APP" and select "Containers as a Service".
     *   Connect your GitHub account and select the repository containing your game server.
-    *   Give your app a name (e.g., `pew-shoot-server`). Back4App will automatically detect it's a Node.js app.
-    *   The "Root Directory" should be `/` and the "Dockerfile" path can be left blank.
+    *   Give your app a name (e.g., `pew-shoot-server`). Back4App will automatically detect the `Dockerfile` and use it for the build.
     *   Click "Create App". Back4App will build and deploy your server.
 5.  **Configure Client**:
     *   Once deployed, Back4App will provide you with a public URL (e.g., `pew-shoot-server-p123.b4a.run`).
     *   Copy this URL.
-    *   Open `matchmaking.js` and replace the placeholder `'pew-shoot-matchmaking.onrender.com'` with your new Back4App URL.
+    *   Open `network.js` and replace the placeholder `'pew-shoot-matchmaking.onrender.com'` with your new Back4App URL.
     *   Your game client will now be able to connect to your live matchmaking server.

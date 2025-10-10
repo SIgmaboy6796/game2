@@ -95,6 +95,11 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
             gunMesh = new THREE.Mesh(currentWeapon.model, new THREE.MeshStandardMaterial({ color: 0x333333 }));
         }
         gunMesh.position.copy(currentWeapon.position);
+
+        if (weaponName === 'shotgun') {
+            gunMesh.scale.set(1.5, 1.5, 1.5); // Make the shotgun 50% larger
+        }
+
         camera.add(gunMesh);
         console.log(`Switched to ${currentWeaponName}`);
         updateAmmoUI();
@@ -111,14 +116,16 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     scene.add(directionalLight);
 
     // --- SKYBOX ---
-    const loader = new THREE.TextureLoader();
-    const texture = loader.load(
-        'textures/skybox.jpg',
-        () => {
-          const rt = new THREE.WebGLCubeRenderTarget(texture.image.height);
-          rt.fromEquirectangularTexture(renderer, texture);
-          scene.background = rt.texture;
-        });
+    const skyboxLoader = new THREE.TextureLoader();
+    const skyboxTexture = skyboxLoader.load('textures/skybox.jpg');
+    skyboxTexture.mapping = THREE.EquirectangularReflectionMapping;
+    skyboxTexture.colorSpace = THREE.SRGBColorSpace;
+
+    const skyboxGeometry = new THREE.SphereGeometry(500, 60, 40);
+    skyboxGeometry.scale(-1, 1, 1); // Invert the sphere to be viewed from the inside
+    const skyboxMaterial = new THREE.MeshBasicMaterial({ map: skyboxTexture });
+    const skybox = new THREE.Mesh(skyboxGeometry, skyboxMaterial);
+    scene.add(skybox);
 
     // --- GROUND ---
     const groundMaterial = new CANNON.Material('groundMaterial');

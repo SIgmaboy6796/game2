@@ -20,8 +20,21 @@ function generateRoomCode() {
     return code;
 }
 
+function broadcast(data) {
+    const message = JSON.stringify(data);
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+        }
+    });
+}
+
 wss.on('connection', ws => {
     console.log('[Server] A client connected.');
+
+    // Send the current list of rooms to the newly connected client
+    const roomList = Object.entries(rooms).map(([roomCode, peerId]) => ({ roomCode, peerId }));
+    ws.send(JSON.stringify({ type: 'room-list', rooms: roomList }));
 
     ws.on('message', message => {
         try {
@@ -31,13 +44,21 @@ wss.on('connection', ws => {
             if (data.type === 'host-game') {
                 const roomCode = generateRoomCode();
                 rooms[roomCode] = data.peerId;
+                ws.isHost = true; // Mark this connection as a host
+                ws.roomCode = roomCode; // Store the room code
+
                 ws.send(JSON.stringify({ type: 'game-hosted', roomCode: roomCode }));
                 console.log(`[Server] Game hosted. Room: ${roomCode}, Host: ${data.peerId}`);
 
+                // Broadcast the new room to all clients
+                broadcast({ type: 'new-room', room: { roomCode, peerId: data.peerId } });
+
                 // Clean up the room after a while to prevent memory leaks
                 setTimeout(() => {
-                    delete rooms[roomCode];
-                    console.log(`[Server] Cleaned up room ${roomCode}.`);
+                    if (delete rooms[roomCode]) { // Returns true if property was deleted
+                        console.log(`[Server] Cleaned up room ${roomCode}.`);
+                        broadcast({ type: 'room-closed', roomCode });
+                    }
                 }, 3600000); // 1 hour
 
             } else if (data.type === 'get-peer-id') {
@@ -55,5 +76,11 @@ wss.on('connection', ws => {
 
     ws.on('close', () => {
         console.log('[Server] A client disconnected.');
+        // If the disconnected client was a host, remove their room
+        if (ws.isHost && rooms[ws.roomCode]) {
+            console.log(`[Server] Host of room ${ws.roomCode} disconnected. Closing room.`);
+            delete rooms[ws.roomCode];
+            broadcast({ type: 'room-closed', roomCode: ws.roomCode });
+        }
     });
 });

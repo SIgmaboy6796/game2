@@ -55,13 +55,11 @@ function connectToMatchmakingServer() {
         return; // Already connected or connecting
     }
     isConnectingToMatchmaker = true;
-    // Use wss:// for secure connections (like on Back4App/Render), ws:// for local
-    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
     
     // *** IMPORTANT: Make sure this points to your deployed server address ***
-    const host = window.location.host.includes('localhost') 
-        ? 'localhost:8080' 
-        : 'pew-shoot-matchmaking.onrender.com'; // Replace with your Back4App URL e.g. 'pew-shoot.b4a.io'
+    const isLocal = window.location.host.includes('localhost');
+    const protocol = isLocal ? 'ws://' : 'wss://';
+    const host = isLocal ? 'localhost:8080' : 'call-match1.onrender.com';
     
     ws = new WebSocket(`${protocol}${host}`);
 
@@ -98,20 +96,21 @@ function connectToMatchmakingServer() {
 }
 
 function initializePeer() {
-    peer = new Peer(undefined, { // By leaving host/port blank, we use the public PeerJS cloud.
+    // By passing `undefined` as the first argument, we use the public PeerJS cloud server.
+    peer = new Peer(undefined, {
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
                 {
-                    urls: 'turn:global.turn.twilio.com:3478?transport=udp',
-                    username: '79f24cb51555599834925835569b9190539d675440b84803d13c32021651a033',
-                    credential: 'Z0a/b7zRBK23jA/3JPSA/wV7sAnOFR3v/hMAaM+2O4s='
+                    urls: "turn:global.turn.twilio.com:3478?transport=udp",
+                    username: "79f24cb51555599834925835569b9190539d675440b84803d13c32021651a033",
+                    credential: "Z0a/b7zRBK23jA/3JPSA/wV7sAnOFR3v/hMAaM+2O4s="
                 }
-            ]
+            ],
+            iceTransportPolicy: 'all' // Important for local testing and some network setups
         },
-        debug: 2, // Set to 3 for most verbose logging, 0 for none.
-        secure: true // Required for connections from HTTPS pages (like Vercel)
+        debug: 2 // Set to 2 for logs, 0 for none.
     });
 
     peer.on('open', (id) => {
@@ -125,13 +124,12 @@ function initializePeer() {
     peer.on('connection', (connection) => {
         if (isHostGlobal) {
             console.log(`[Host] Auto-accepting incoming connection from ${connection.peer}.`);
-            // The 'open' event will fire when the connection is established and ready for data.
+            setupConnectionListeners(connection); // Set up listeners immediately.
+            // Wait for the connection to be fully open before handling it.
             connection.on('open', () => {
+                // The 'open' event guarantees the connection is ready for data.
                 handleNewConnection(connection);
-                connection.reliable = true;
             });
-            // Set up listeners immediately to handle the connection process.
-            setupConnectionListeners(connection);
         } else {
             // If we are not the host, we should not be receiving connections.
             console.warn(`Received unexpected connection from ${connection.peer} as a client. Closing it.`);

@@ -3,150 +3,305 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Call-Of-Zdenek</title>
+    <title>Pew Shoot</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary-color: #00aeff;
+            --secondary-color: #ff00ff;
+            --background-color: #12121c;
+            --surface-color: rgba(20, 20, 30, 0.85);
+            --text-color: #e0e0e0;
+            --glow-color: rgba(0, 174, 255, 0.7);
+        }
+
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #333;
-            color: white;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Roboto', sans-serif;
         }
+
         canvas {
             display: block;
         }
+
+        /* --- UI Containers --- */
+        .ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(ellipse at center, rgba(18, 18, 28, 0.8) 0%, rgba(18, 18, 28, 1) 100%);
+            backdrop-filter: blur(5px);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+        }
+
+        .ui-container.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* --- Main Menu --- */
+        #mainMenu {
+            justify-content: space-between;
+        }
+
+        .main-menu-header {
+            width: 100%;
+            padding: 2rem;
+            text-align: center;
+            background: linear-gradient(to bottom, var(--surface-color), transparent);
+        }
+
+        .main-menu-center {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .game-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            text-shadow: 0 0 10px var(--glow-color), 0 0 20px var(--glow-color);
+            letter-spacing: 2px;
+        }
+
+        .main-menu-footer {
+            width: 100%;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(to top, var(--surface-color), transparent);
+        }
+
+        /* --- Buttons & Inputs --- */
+        .btn-glow {
+            background-color: transparent;
+            border: 2px solid var(--primary-color);
+            color: var(--primary-color);
+            padding: 12px 28px;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 5px var(--glow-color), inset 0 0 5px var(--glow-color);
+            margin: 10px;
+        }
+
+        .btn-glow:hover, .btn-glow:focus {
+            background-color: var(--primary-color);
+            color: var(--background-color);
+            box-shadow: 0 0 15px var(--glow-color), 0 0 30px var(--glow-color), inset 0 0 5px white;
+            transform: scale(1.05);
+        }
+
+        .input-glow {
+            background-color: rgba(0, 0, 0, 0.5);
+            border: 2px solid var(--primary-color);
+            color: var(--text-color);
+            padding: 12px 20px;
+            box-shadow: 0 0 5px var(--glow-color);
+            transition: box-shadow 0.3s ease;
+        }
+
+        .input-glow:focus {
+            background-color: rgba(0, 0, 0, 0.7);
+            box-shadow: 0 0 15px var(--glow-color);
+            outline: none;
+        }
+
+        /* --- Lobby & Settings --- */
+        .menu-panel {
+            background-color: var(--surface-color);
+            padding: 2rem 3rem;
+            border-radius: 10px;
+            border: 1px solid var(--primary-color);
+            box-shadow: 0 0 20px var(--glow-color);
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .menu-panel h2 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--primary-color);
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        #server-list-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            border: 1px solid #333;
+            background-color: rgba(0,0,0,0.3);
+        }
+
+        .server-item {
+            background-color: transparent;
+            border-color: #333;
+            color: var(--text-color);
+            transition: background-color 0.2s ease;
+        }
+
+        .server-item:hover {
+            background-color: rgba(0, 174, 255, 0.2);
+            color: white;
+        }
+
+        /* --- In-Game UI --- */
         .crosshair {
             position: absolute;
             top: 50%;
             left: 50%;
-            width: 10px;
-            height: 10px;
+            width: 4px;
+            height: 4px;
             border-radius: 50%;
-            border: 2px solid white;
+            background-color: white;
             transform: translate(-50%, -50%);
             mix-blend-mode: difference;
+            pointer-events: none;
         }
-        .menu {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-        }
-        .menu h2 {
-            margin-top: 0;
-        }
-        .menu button {
-            background-color: #444;
-            color: white;
-            border: 1px solid white;
-            padding: 10px 20px;
-            margin: 5px;
-            cursor: pointer;
-        }
-        .menu button:hover {
-            background-color: #666;
-        }
+
         #ammoCounter {
             position: absolute;
             bottom: 20px;
             right: 20px;
-            font-size: 24px;
-            font-family: monospace;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            font-size: 2.5rem;
+            font-family: 'Orbitron', sans-serif;
+            color: var(--primary-color);
+            text-shadow: 0 0 5px var(--glow-color), 0 0 10px var(--glow-color);
         }
+
         #healthBar {
             position: absolute;
             bottom: 20px;
             left: 20px;
             width: 200px;
             height: 20px;
-            background-color: red;
-            border: 2px solid white;
+            background-color: rgba(255, 0, 0, 0.3);
+            border: 1px solid var(--primary-color);
         }
+
         #health {
             width: 100%;
             height: 100%;
-            background-color: green;
+            background-color: var(--primary-color);
+            transition: width 0.5s ease;
         }
-        #lobby {
-            display: none; /* Initially hidden */
-            padding: 20px;
+
+        #pauseMenu, #keybindsMenu {
+            background-color: var(--surface-color);
+            padding: 40px;
+            border-radius: 10px;
+            border: 1px solid var(--primary-color);
+            box-shadow: 0 0 20px var(--glow-color);
+            text-align: center;
         }
-        #debugPanel {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background-color: rgba(0,0,0,0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 12px;
-            display: none;
-            max-height: 90vh;
-            overflow-y: auto;
-            z-index: 1000;
-            white-space: pre;
+
+        #pauseMenu h2, #keybindsMenu h2 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--primary-color);
+            margin-bottom: 1.5rem;
         }
     </style>
 </head>
 <body>
-    <div id="mainMenu" class="container text-center mt-5">
-        <h1>Call-Of-Zdenek</h1>
-        <div class="form-group">
-            <label for="nametagInput">Enter Your Nametag:</label>
-            <input type="text" class="form-control" id="nametagInput" placeholder="Player">
+    <!-- Main Menu -->
+    <div id="mainMenu" class="ui-container active">
+        <div class="main-menu-header">
+            <h1 class="game-title">PEW SHOOT</h1>
         </div>
-        <button id="singlePlayerButton" class="btn btn-primary">Single Player</button>
-        <button id="multiplayerButton" class="btn btn-success">Multiplayer</button>
+        <div class="main-menu-center">
+            <button id="singlePlayerButton" class="btn btn-glow btn-lg">Single Player</button>
+            <button id="multiplayerButton" class="btn btn-glow btn-lg">Multiplayer</button>
+        </div>
+        <div class="main-menu-footer">
+            <input type="text" class="form-control input-glow mr-3" id="nametagInput" placeholder="Enter Nametag...">
+            <button id="settingsButton" class="btn btn-glow">Settings</button>
+        </div>
     </div>
 
-    <div id="lobby" class="container mt-5 text-center">
-        <h2>Multiplayer</h2>
-        <div id="lobby-choice">
-            <button id="hostChoiceButton" class="btn btn-primary btn-lg">Host Game</button>
-            <button id="joinChoiceButton" class="btn btn-success btn-lg">Join Game</button>
-            <button id="backToMainButton" class="btn btn-secondary mt-3">Back to Main Menu</button>
-        </div>
-        
-        <div id="host-lobby" class="mt-3" style="display: none;">
-            <h3>You are the Host</h3>
-            <p>Share this ID with your friends:</p>
-            <div class="input-group mb-3">
-                <input type="text" id="hostIdDisplay" class="form-control" readonly placeholder="Waiting for ID...">
-                <div class="input-group-append">
-                    <button class="btn btn-outline-secondary" id="copyIdButton">Copy</button>
+    <!-- Multiplayer Lobby -->
+    <div id="lobby" class="ui-container">
+        <div class="menu-panel">
+            <!-- Join View -->
+            <div id="join-view">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>Server Browser</h2>
+                    <div>
+                        <button id="hostChoiceButton" class="btn btn-glow">Host New Game</button>
+                        <button id="backToMainMenuFromLobby" class="btn btn-secondary">Back</button>
+                    </div>
+                </div>
+                <div id="server-list-container" class="list-group mb-3">
+                    <div id="no-servers-message" class="list-group-item list-group-item-dark text-dark">Searching for active games...</div>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="joinIdInput" class="form-control input-glow" placeholder="...or enter a Room Code to join">
+                    <div class="input-group-append">
+                        <button id="connectToHostButton" class="btn btn-glow">Join</button>
+                    </div>
                 </div>
             </div>
-            <h4>Players in Lobby:</h4>
-            <ul id="playerList" class="list-group mb-3"></ul>
-            <button id="startGameButton" class="btn btn-success btn-lg">Start Game</button>
-        </div>
 
-        <div id="join-lobby" class="mt-3" style="display: none;">
-            <h3>Join a Game</h3>
-            <input type="text" id="joinIdInput" class="form-control mb-2" placeholder="Enter Room Code">
-            <button id="connectToHostButton" class="btn btn-success">Connect</button>
+            <!-- Host Lobby View -->
+            <div id="host-lobby" style="display: none;">
+                <h2>Hosting Game</h2>
+                <p>Share this Room Code with your friends:</p>
+                <div class="input-group mb-3">
+                    <input type="text" id="hostIdDisplay" class="form-control input-glow" readonly placeholder="Generating Code...">
+                    <div class="input-group-append">
+                        <button class="btn btn-glow" id="copyIdButton">Copy</button>
+                    </div>
+                </div>
+                <h4>Players in Lobby:</h4>
+                <ul id="playerList" class="list-group mb-3 bg-transparent"></ul>
+                <div class="mt-auto text-center">
+                    <button id="startGameButton" class="btn btn-glow btn-success">Start Game</button>
+                    <button id="cancelHostButton" class="btn btn-secondary mt-2">Cancel</button>
+                </div>
+            </div>
         </div>
     </div>
 
+    <!-- Settings Menu -->
+    <div id="settings-menu" class="ui-container">
+        <div class="menu-panel text-center">
+            <h2>Settings</h2>
+            <p>Settings will be implemented here. (e.g., Sensitivity, Volume)</p>
+            <button id="backToMainMenuFromSettings" class="btn btn-glow mt-4">Back</button>
+        </div>
+    </div>
+
+    <!-- In-Game UI -->
     <div id="game-ui" style="display: none;">
         <div id="ammoCounter"></div>
         <div id="healthBar">
             <div id="health"></div>
         </div>
         <div class="crosshair"></div>
-        <div id="networkStatus" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 18px; background-color: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px; display: none;"></div>
-        <div id="pauseMenu" class="menu" style="display: none;">
+        <div id="networkStatus" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 16px; background-color: var(--surface-color); padding: 8px 15px; border-radius: 5px; display: none; border: 1px solid var(--primary-color);"></div>
+        <div id="pauseMenu" style="display: none;">
             <h2>Paused</h2>
-            <button id="resumeButton">Resume</button>
-            <button id="keybindsButton">Keybinds</button>
+            <button id="resumeButton" class="btn btn-glow">Resume</button>
+            <button id="keybindsButton" class="btn btn-glow">Keybinds</button>
         </div>
-        <div id="keybindsMenu" class="menu" style="display: none;">
+        <div id="keybindsMenu" style="display: none;">
             <h2>Keybinds</h2>
             <p>Move Forward: W</p>
             <p>Move Left: A</p>
@@ -159,7 +314,7 @@
             <p>Select Pistol: 1</p>
             <p>Select Shotgun: 2</p>
             <p>Select Rocket Launcher: 3</p>
-            <button id="backButton">Back</button>
+            <button id="backButton" class="btn btn-glow">Back</button>
         </div>
     </div>
 
@@ -177,31 +332,37 @@
         import { init as initGame, players } from '/game.js';
         import { initNetwork, connectToHost, sendData, getConnections, getMyId, setAsHost, hostGame, getHostPeerId } from '/network.js';
 
+        // --- UI Element Declarations ---
         const mainMenu = document.getElementById('mainMenu');
         const lobby = document.getElementById('lobby');
         const gameUi = document.getElementById('game-ui');
-
-        // Main Menu
-        const nametagInput = document.getElementById('nametagInput');
         const singlePlayerButton = document.getElementById('singlePlayerButton');
         const multiplayerButton = document.getElementById('multiplayerButton');
-
-        // Lobby elements
-        const lobbyChoice = document.getElementById('lobby-choice');
+        const settingsButton = document.getElementById('settingsButton');
+        const settingsMenu = document.getElementById('settings-menu');
+        const nametagInput = document.getElementById('nametagInput'); nametagInput.value = `Player-${Math.floor(1000 + Math.random() * 9000)}`;
+        const joinView = document.getElementById('join-view');
         const hostLobby = document.getElementById('host-lobby');
-        const joinLobby = document.getElementById('join-lobby');
-
+        const cancelHostButton = document.getElementById('cancelHostButton');
         const playerList = document.getElementById('playerList');
-        const networkStatus = document.getElementById('networkStatus');
-        
         const hostChoiceButton = document.getElementById('hostChoiceButton');
-        const joinChoiceButton = document.getElementById('joinChoiceButton');
-        const backToMainButton = document.getElementById('backToMainButton');
         const hostIdDisplay = document.getElementById('hostIdDisplay');
-        const copyIdButton = document.getElementById('copyIdButton');
+        const copyIdButton = document.getElementById('copyIdButton'); // This was missing a declaration
         const startGameButton = document.getElementById('startGameButton');
         const joinIdInput = document.getElementById('joinIdInput');
         const connectToHostButton = document.getElementById('connectToHostButton');
+        const noServersMessage = document.getElementById('no-servers-message');
+        const serverListContainer = document.getElementById('server-list-container');
+        const networkStatus = document.getElementById('networkStatus');
+        const resumeButton = document.getElementById('resumeButton');
+        const keybindsButton = document.getElementById('keybindsButton');
+        const backButton = document.getElementById('backButton');
+        const pauseMenu = document.getElementById('pauseMenu');
+        const keybindsMenu = document.getElementById('keybindsMenu');
+
+        // Pause menu elements
+        let controls; // This will be set in initGame
+        let isPaused = false;
 
         let nametag = 'Player';
         let isHost = false;
@@ -211,6 +372,22 @@
         let shootHandler = null; // Will hold the handleShoot function
         let gameFont = null; // Will hold the loaded font
         const playerCreateQueue = []; // Queue for players that arrive before the game scene is ready
+        let serverList = {}; // { roomCode: peerId }
+
+        // --- UI View Management ---
+        const allViews = [mainMenu, lobby, settingsMenu, gameUi];
+        function showView(viewToShow) {
+            allViews.forEach(view => {
+                if (view === viewToShow) {
+                    view.classList.add('active');
+                } else {
+                    view.classList.remove('active');
+                }
+            });
+        }
+
+        // --- INITIALIZATION ---
+        setupGlobalNetworkListeners();
 
         function showNetworkStatus(message, isError = false) {
             networkStatus.textContent = message;
@@ -229,56 +406,91 @@
             });
         }
 
-        function launchSinglePlayerGame() {
-            isMultiplayer = false;
-            nametag = nametagInput.value.trim() || 'Player';
-            mainMenu.style.display = 'none';
-            lobby.style.display = 'none';
-            gameUi.style.display = 'block';
-            initGame(nametag, false);
+        function updateServerListUI() {
+            serverListContainer.innerHTML = '';
+            const rooms = Object.keys(serverList);
+            if (rooms.length === 0) {
+                serverListContainer.appendChild(noServersMessage);
+                noServersMessage.textContent = 'No active games found. Why not host one?';
+            } else {
+                rooms.forEach(roomCode => {
+                    const peerId = serverList[roomCode];
+                    const serverItem = document.createElement('a');
+                    serverItem.href = '#';
+                    serverItem.className = 'list-group-item list-group-item-action server-item';
+                    // For now, just show the room code. You could add more info like player count later.
+                    serverItem.textContent = `Game Room: ${roomCode}`;
+                    serverItem.onclick = (e) => {
+                        e.preventDefault();
+                        joinIdInput.value = roomCode;
+                        connectToHostButton.click();
+                    };
+                    serverListContainer.appendChild(serverItem);
+                });
+            }
         }
 
         function initLobby() {
             nametag = nametagInput.value.trim() || `Player-${Math.floor(1000 + Math.random() * 9000)}`;
-            mainMenu.style.display = 'none';
-            lobby.style.display = 'flex'; // Use flex for centering
+            showView(lobby);
             initNetwork(nametag);
         }
 
         function launchMultiplayerGame() {
             isMultiplayer = true;
-            mainMenu.style.display = 'none';
-            lobby.style.display = 'none';
+            showView(null); // Hide all UI containers
             gameUi.style.display = 'block';
             initGame(nametag, true, isHost);
         }
 
+        function launchSinglePlayerGame() {
+            isMultiplayer = false;
+            nametag = nametagInput.value.trim() || 'Player';
+            showView(null);
+            gameUi.style.display = 'block';
+            initGame(nametag, false);
+        }
+
+        // --- UI Event Listeners ---
+
         singlePlayerButton.addEventListener('click', launchSinglePlayerGame);
 
-        multiplayerButton.addEventListener('click', initLobby);
+        multiplayerButton.addEventListener('click', () => {
+            initLobby();
+        });
+
+        settingsButton.addEventListener('click', () => {
+            showView(settingsMenu);
+        });
+
+        document.getElementById('backToMainMenuFromSettings').addEventListener('click', () => {
+            showView(mainMenu);
+        });
+        
+        document.getElementById('backToMainMenuFromLobby').addEventListener('click', () => {
+            // TODO: Disconnect from peer/matchmaking if necessary
+            showView(mainMenu);
+            // Reset lobby views
+            joinView.style.display = 'block';
+            hostLobby.style.display = 'none';
+        });
 
         hostChoiceButton.addEventListener('click', () => {
             console.log('[UI] Host button clicked.');
             isHost = true;
+            joinView.style.display = 'none'; // Hide join view
             setAsHost(); // Tell the network layer that we are the host.
-            lobbyChoice.style.display = 'none';
             hostLobby.style.display = 'block'; 
             showNetworkStatus('Requesting room code from server...');
             // If peer is ready, host immediately. Otherwise, the 'peer-ready' event will trigger it.
             if (myPeerId) hostGame(myPeerId);
-            updatePlayerList([{ nametag }]);
+            updatePlayerList([{ nametag: nametagInput.value.trim() || 'Player' }]);
         });
 
-        joinChoiceButton.addEventListener('click', () => {
-            lobbyChoice.style.display = 'none';
-            joinLobby.style.display = 'block';
-            joinIdInput.focus();
-        });
-
-        backToMainButton.addEventListener('click', () => {
-            lobby.style.display = 'none';
-            mainMenu.style.display = 'block';
-            // TODO: Should also disconnect from peerjs if connected
+        cancelHostButton.addEventListener('click', () => {
+            hostLobby.style.display = 'none';
+            joinView.style.display = 'block';
+            // TODO: Tell matchmaking server to close the room
         });
 
         copyIdButton.addEventListener('click', () => {
@@ -303,20 +515,38 @@
             launchMultiplayerGame();
         });
 
-        // --- GLOBAL NETWORKING LISTENERS ---
-        // These are set up once on page load to prevent race conditions.
+        // --- Pause Menu Logic ---
+        window.addEventListener('game-controls-ready', (e) => {
+            controls = e.detail.controls;
 
-        window.addEventListener('matchmaking-connected', () => {
-            showNetworkStatus('Connected to matchmaking service.');
+            controls.addEventListener('lock', () => {
+                isPaused = false;
+                pauseMenu.style.display = 'none';
+                keybindsMenu.style.display = 'none';
+            });
+
+            controls.addEventListener('unlock', () => {
+                isPaused = true;
+                pauseMenu.style.display = 'block';
+            });
         });
 
-        window.addEventListener('matchmaking-error', (e) => {
-            showNetworkStatus(e.detail.message, true);
+        resumeButton.addEventListener('click', () => {
+            if (controls) controls.lock();
         });
 
-        window.addEventListener('matchmaking-disconnected', () => {
-            showNetworkStatus('Disconnected from matchmaking service.', true);
+        keybindsButton.addEventListener('click', () => {
+            pauseMenu.style.display = 'none';
+            keybindsMenu.style.display = 'block';
         });
+
+        backButton.addEventListener('click', () => {
+            keybindsMenu.style.display = 'none';
+            pauseMenu.style.display = 'block';
+        });
+
+        // --- GLOBAL EVENT LISTENERS ---
+        // Centralized setup for all network and game-related events.
 
         function createPlayer(peerId, nametag) {
             // This function is called by network events.
@@ -348,48 +578,9 @@
             players[peerId] = { mesh: playerMesh, nametagMesh: nametagMesh, nametag: nametag, position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
         }
 
-        window.addEventListener('game-initialized', (e) => {
-            // The game.js file will dispatch this event when it's ready.
-            gameScene = e.detail.scene;
-            shootHandler = e.detail.handleShoot;
-            gameFont = e.detail.font; // Make sure game.js dispatches the font
-
-            // Now that the game is ready, process any players that were queued.
-            console.log(`[UI] Game initialized. Processing ${playerCreateQueue.length} queued players.`);
-            while (playerCreateQueue.length > 0) {
-                const playerData = playerCreateQueue.shift();
-                createPlayer(playerData.peerId, playerData.nametag);
-            }
-        });
-
-        // This event is dispatched from network.js for the host when a new player's connection is open.
-        window.addEventListener('host-player-joined', (event) => {
-            console.log('[UI] "host-player-joined" event:', event.detail);
-            // The 'player-list-updated' event will be fired separately to update the UI for everyone.
-        });
-
-        window.addEventListener('peer-ready', (event) => {
-            console.log('[UI] "peer-ready" event received.', event.detail);
-            myPeerId = event.detail.peerId; // Store our ID
-            // If we are already on the host screen, it means we were waiting for the peer ID.
-            // Now we can request the room code.
-            if (isHost && hostLobby.style.display === 'block') {
-                hostGame(myPeerId);
-            }
-        });
-
-        window.addEventListener('game-hosted-success', (e) => {
-            const { roomCode } = e.detail;
-            if (isHost) {
-                hostIdDisplay.value = roomCode;
-            }
-        });
-
-        window.addEventListener('data-received', (event) => {
-            console.log('[UI] "data-received" event:', event.detail);
+        function handleDataReceived(event) {
             const { peerId, data } = event.detail;
             if (!data.type) return;
-
             if (data.type === 'state') {
                 // This logic should be in game.js, but for now, we handle it here.
                 // When state updates come in, find the corresponding player and update their position.
@@ -407,17 +598,30 @@
                 }
             } else if (data.type === 'welcome') {
                 // This is for the newly joined client
-                joinLobby.style.display = 'none';
+                showView(lobby);
+                joinView.style.display = 'none';
                 hostLobby.style.display = 'block';
-                hostLobby.innerHTML = '<h3>Connected to lobby. Waiting for host to start...</h3>';
+                hostLobby.innerHTML = '<div class="text-center"><h2>Connected to Lobby</h2><p>Waiting for host to start the game...</p></div>';
                 data.players.forEach(p => {
                     if (p.peerId !== getMyId() && !players[p.peerId]) {
                         createPlayer(p.peerId, p.nametag);
                     }
                 });
             }
-            else if (data.type === 'player-list') { // Client receives this
-                // This is for clients already in the lobby when another joins/leaves
+            else if (data.type === 'room-list') { // Received on connecting to matchmaking
+                serverList = {};
+                data.rooms.forEach(room => {
+                    serverList[room.roomCode] = room.peerId;
+                });
+                updateServerListUI();
+            } else if (data.type === 'new-room') { // Broadcast when a new room is created
+                serverList[data.room.roomCode] = data.room.peerId;
+                updateServerListUI();
+            } else if (data.type === 'room-closed') { // Broadcast when a room is closed
+                delete serverList[data.roomCode];
+                updateServerListUI();
+            } else if (data.type === 'player-list') { // Client receives this
+                // This is for clients already in the game lobby when another joins/leaves
                 dispatchNetworkEvent('player-list-updated', { players: data.players });
             }
             else if (data.type === 'start-game') {
@@ -439,59 +643,110 @@
                     // Example: applyDamage(data.damage);
                 }
             }
-        });
+        }
 
-        window.addEventListener('player-list-updated', (event) => {
-            console.log('[UI] "player-list-updated" event:', event.detail);
-            updatePlayerList(event.detail.players);
-            if (!isHost) startGameButton.style.display = 'none';
-        });
+        function setupGlobalNetworkListeners() {
+            // --- Matchmaking Server Events ---
+            window.addEventListener('matchmaking-connected', () => {
+                showNetworkStatus('Connected to matchmaking service.');
+            });
 
-        window.addEventListener('player-disconnected', (event) => {
-            console.log('[UI] "player-disconnected" event:', event.detail);
-            const { peerId } = event.detail;
-            if (players[peerId] && players[peerId].nametagMesh && gameScene) {
-                gameScene.remove(players[peerId].nametagMesh);
-            }
-            if (players[peerId] && gameScene) {
-                gameScene.remove(players[peerId].mesh);
-                delete players[peerId];
-            } else {
-                console.log(`Player ${peerId} not in game scene, but disconnected.`);
-            }
-            showNetworkStatus(`A player disconnected.`, true);
-            if (isHost && lobby.style.display === 'block') {
-                // Host needs to update everyone's player list
-                const connections = getConnections();
-                const players = connections.map(c => ({ nametag: c.metadata.nametag })).concat({ nametag });
-                updatePlayerList(players);
-            }
-        });
+            window.addEventListener('matchmaking-error', (e) => {
+                showNetworkStatus(e.detail.message, true);
+            });
 
-        window.addEventListener('connection-open', (event) => {
-            console.log('[UI] "connection-open" event:', event.detail);
-            showNetworkStatus(`Connected to ${event.detail.peerId}!`);
-        });
+            window.addEventListener('matchmaking-disconnected', () => {
+                showNetworkStatus('Disconnected from matchmaking service.', true);
+            });
 
-        window.addEventListener('connection-error', (event) => {
-            console.error('[UI] "connection-error" event:', event.detail);
-            showNetworkStatus(`Error: ${event.detail.error.type || 'Connection failed'}`, true);
-        });
+            window.addEventListener('game-hosted-success', (e) => {
+                const { roomCode } = e.detail;
+                if (isHost) {
+                    hostIdDisplay.value = roomCode;
+                }
+            });
 
-        window.addEventListener('game-started', () => {
-            console.log('[UI] "game-started" event received. Launching multiplayer game.');
-            launchMultiplayerGame();
-        });
+            window.addEventListener('host-peer-id-received', (e) => {
+                const { peerId } = e.detail;
+                if (peerId) {
+                    showNetworkStatus(`Host found. Connecting...`);
+                    connectToHost(peerId);
+                } else {
+                    showNetworkStatus('Could not find a game with that room code.', true);
+                }
+            });
 
-        window.addEventListener('host-peer-id-received', (e) => {
-            const { peerId } = e.detail;
-            if (peerId) {
-                showNetworkStatus(`Host found. Connecting...`);
-                connectToHost(peerId);
-            } else {
-                showNetworkStatus('Could not find a game with that room code.', true);
-            }
-        });
+            // --- PeerJS & P2P Connection Events ---
+            window.addEventListener('peer-ready', (event) => {
+                console.log('[UI] "peer-ready" event received.', event.detail);
+                myPeerId = event.detail.peerId; // Store our ID
+                // If we are already on the host screen, it means we were waiting for the peer ID.
+                // Now we can request the room code.
+                if (isHost && hostLobby.style.display === 'block') {
+                    hostGame(myPeerId);
+                }
+            });
+
+            window.addEventListener('connection-open', (event) => {
+                console.log('[UI] "connection-open" event:', event.detail);
+                showNetworkStatus(`Connected to ${event.detail.peerId}!`);
+            });
+
+            window.addEventListener('connection-error', (event) => {
+                console.error('[UI] "connection-error" event:', event.detail);
+                showNetworkStatus(`Error: ${event.detail.error.type || 'Connection failed'}`, true);
+            });
+
+            window.addEventListener('player-disconnected', (event) => {
+                console.log('[UI] "player-disconnected" event:', event.detail);
+                const { peerId } = event.detail;
+                if (players[peerId] && players[peerId].nametagMesh && gameScene) {
+                    gameScene.remove(players[peerId].nametagMesh);
+                }
+                if (players[peerId] && gameScene) {
+                    gameScene.remove(players[peerId].mesh);
+                    delete players[peerId];
+                } else {
+                    console.log(`Player ${peerId} not in game scene, but disconnected.`);
+                }
+                showNetworkStatus(`A player disconnected.`, true);
+                if (isHost && lobby.style.display === 'block') {
+                    // Host needs to update everyone's player list
+                    const connections = getConnections();
+                    const players = connections.map(c => ({ nametag: c.metadata.nametag })).concat({ nametag });
+                    updatePlayerList(players);
+                }
+            });
+
+            // --- Game Logic Events ---
+            window.addEventListener('data-received', handleDataReceived);
+
+            window.addEventListener('game-initialized', (e) => {
+                gameScene = e.detail.scene;
+                shootHandler = e.detail.handleShoot;
+                gameFont = e.detail.font;
+                console.log(`[UI] Game initialized. Processing ${playerCreateQueue.length} queued players.`);
+                while (playerCreateQueue.length > 0) {
+                    const playerData = playerCreateQueue.shift();
+                    createPlayer(playerData.peerId, playerData.nametag);
+                }
+            });
+
+            window.addEventListener('host-player-joined', (event) => {
+                console.log('[UI] "host-player-joined" event:', event.detail);
+            });
+
+            window.addEventListener('player-list-updated', (event) => {
+                console.log('[UI] "player-list-updated" event:', event.detail);
+                updatePlayerList(event.detail.players);
+                if (!isHost) startGameButton.style.display = 'none';
+            });
+
+            window.addEventListener('game-started', () => {
+                console.log('[UI] "game-started" event received. Launching multiplayer game.');
+                launchMultiplayerGame();
+            });
+        }
 
 
     </script>

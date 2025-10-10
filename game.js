@@ -49,6 +49,12 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     // --- UI ---
     const ammoCounter = document.getElementById('ammoCounter');
     const healthBar = document.getElementById('health');
+    const crosshair = document.querySelector('.crosshair');
+    const pistolScope = document.getElementById('pistolScope');
+    const rocketLauncherScope = document.getElementById('rocketLauncherScope');
+    const scopeContainer = document.getElementById('scopeContainer');
+    const resupplyIndicator = document.getElementById('resupplyIndicator');
+
 
     function updateAmmoUI() {
         if (isReloading) {
@@ -69,6 +75,9 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     const unlockedWeapons = { 'pistol': true, 'shotgun': false, 'rocketLauncher': false };
     const activeRockets = []; // To track rockets for smoke trails
     const smokeParticles = []; // To manage smoke particles
+    let isScoping = false;
+    let targetFov = 75; // For smooth zoom
+    let isHoldingBreath = false;
 
     let canShoot = true;
     let isReloading = false;
@@ -96,9 +105,11 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         }
         gunMesh.position.copy(currentWeapon.position);
 
-        if (weaponName === 'shotgun') {
-            gunMesh.scale.set(1.5, 1.5, 1.5); // Make the shotgun 50% larger
-        }
+        // Adjust weapon scales for better view
+        if (weaponName === 'pistol') gunMesh.scale.set(0.8, 0.8, 0.8);
+        if (weaponName === 'shotgun') gunMesh.scale.set(1.2, 1.2, 1.2);
+        if (weaponName === 'rocketLauncher') gunMesh.scale.set(0.9, 0.9, 0.9);
+
 
         camera.add(gunMesh);
         console.log(`Switched to ${currentWeaponName}`);
@@ -333,6 +344,96 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     createWeaponPickup('shotgun', new THREE.Vector3(10, 0.5, 10));
     createWeaponPickup('rocketLauncher', new THREE.Vector3(-10, 0.5, -10));
 
+    // --- RESUPPLY AREAS ---
+    const resupplyPads = [];
+    const resupplyTime = 3000; // 3 seconds to resupply
+    let resupplyTimer = 0;
+    let isOnResupplyPad = false;
+
+    function createResupplyPad(position) {
+        const padGeometry = new THREE.CylinderGeometry(2, 2, 0.1, 16);
+        const padMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00aeff,
+            emissive: 0x00aeff,
+            emissiveIntensity: 0.5,
+            transparent: true,
+            opacity: 0.4
+        });
+        const padMesh = new THREE.Mesh(padGeometry, padMaterial);
+        padMesh.position.copy(position);
+        scene.add(padMesh);
+
+        resupplyPads.push(padMesh);
+    }
+
+    createResupplyPad(new THREE.Vector3(15, 0.05, -15));
+    createResupplyPad(new THREE.Vector3(-15, 0.05, 15));
+
+    // --- KEYBINDINGS ---
+    let keybinds = {};
+    const defaultKeybinds = {
+        moveForward: 'KeyW',
+        moveBackward: 'KeyS',
+        moveLeft: 'KeyA',
+        moveRight: 'KeyD',
+        jump: 'Space',
+        reload: 'KeyR',
+        pickup: 'KeyF',
+        holdBreath: 'ShiftLeft',
+        weapon1: 'Digit1',
+        weapon2: 'Digit2',
+        weapon3: 'Digit3',
+    };
+
+    let isRebinding = false;
+    let actionToRebind = null;
+
+    function loadKeybinds() {
+        const savedBinds = localStorage.getItem('call-of-zdenek-keybinds');
+        if (savedBinds) {
+            keybinds = { ...defaultKeybinds, ...JSON.parse(savedBinds) };
+        } else {
+            keybinds = { ...defaultKeybinds };
+        }
+    }
+
+    function saveKeybinds() {
+        localStorage.setItem('call-of-zdenek-keybinds', JSON.stringify(keybinds));
+    }
+
+    function updateKeybindsUI() {
+        const keybindsList = document.getElementById('keybindsList');
+        keybindsList.innerHTML = ''; // Clear existing list
+
+        for (const action in keybinds) {
+            const key = keybinds[action];
+            const actionText = action.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+            
+            const row = document.createElement('div');
+            row.className = 'keybind-row';
+            
+            const label = document.createElement('span');
+            label.textContent = actionText;
+            
+            const controlDiv = document.createElement('div');
+            const keyDisplay = document.createElement('kbd');
+            keyDisplay.id = `keybind-display-${action}`;
+            // Display friendly names for some keys
+            keyDisplay.textContent = key.replace('Key', '').replace('Digit', '').replace('Left', '');
+
+            const changeButton = document.createElement('button');
+            changeButton.className = 'btn btn-sm btn-outline-primary ml-2';
+            changeButton.textContent = isRebinding && actionToRebind === action ? 'Press a key...' : 'Change';
+            changeButton.dataset.action = action;
+
+            controlDiv.appendChild(keyDisplay);
+            controlDiv.appendChild(changeButton);
+            row.appendChild(label);
+            row.appendChild(controlDiv);
+            keybindsList.appendChild(row);
+        }
+    }
+
     // --- CONTROLS ---
     const keys = {};
     document.addEventListener('keydown', (event) => {
@@ -340,19 +441,43 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         if (event.code === 'Escape' && isPaused) {
             controls.lock();
         }
-        if (event.code === 'KeyR') {
+
+        if (isRebinding) {
+            // Check if the key is already bound
+            const existingAction = Object.keys(keybinds).find(action => keybinds[action] === event.code);
+            if (existingAction) {
+                // Swap keys
+                const oldKey = keybinds[actionToRebind];
+                keybinds[existingAction] = oldKey;
+            }
+            keybinds[actionToRebind] = event.code;
+            saveKeybinds();
+            isRebinding = false;
+            actionToRebind = null;
+            updateKeybindsUI();
+            return; // Don't process game actions while rebinding
+        }
+
+        if (event.code === keybinds.reload) {
             reload();
         }
         // Weapon switching
-        if (event.code === 'Digit1' && unlockedWeapons.pistol) switchWeapon('pistol');
-        if (event.code === 'Digit2' && unlockedWeapons.shotgun) switchWeapon('shotgun');
-        if (event.code === 'Digit3' && unlockedWeapons.rocketLauncher) switchWeapon('rocketLauncher');
+        if (event.code === keybinds.weapon1 && unlockedWeapons.pistol) switchWeapon('pistol');
+        if (event.code === keybinds.weapon2 && unlockedWeapons.shotgun) switchWeapon('shotgun');
+        if (event.code === keybinds.weapon3 && unlockedWeapons.rocketLauncher) switchWeapon('rocketLauncher');
 
-        if (event.code === 'KeyF') {
+        if (event.code === keybinds.pickup) {
             tryPickupWeapon();
+        }
+        // Hold breath to steady scope
+        if (event.code === keybinds.holdBreath) {
+            isHoldingBreath = true;
         }
     });
     document.addEventListener('keyup', (event) => (keys[event.code] = false));
+
+    // Initial load
+    loadKeybinds();
 
     let canJump = false;
     playerBody.addEventListener('collide', (event) => {
@@ -386,11 +511,13 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     const pauseMenu = document.getElementById('pauseMenu');
     const keybindsMenu = document.getElementById('keybindsMenu');
     const resumeButton = document.getElementById('resumeButton');
-    const keybindsButton = document.getElementById('keybindsButton');
+    const keybindsFromSettingsButton = document.getElementById('keybindsFromSettingsButton');
     const backButton = document.getElementById('backButton');
+    let cameFromPauseMenu = false;
 
     controls.addEventListener('lock', () => {
         isPaused = false;
+        crosshair.style.display = 'block';
         pauseMenu.style.display = 'none';
         keybindsMenu.style.display = 'none';
     });
@@ -398,20 +525,29 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     controls.addEventListener('unlock', () => {
         isPaused = true;
         pauseMenu.style.display = 'block';
+        crosshair.style.display = 'none';
     });
 
     resumeButton.addEventListener('click', () => {
         controls.lock();
     });
 
-    keybindsButton.addEventListener('click', () => {
-        pauseMenu.style.display = 'none';
-        keybindsMenu.style.display = 'block';
+    keybindsFromSettingsButton.addEventListener('click', () => {
+        document.getElementById('settings-menu').classList.remove('active');
+        keybindsMenu.classList.add('active');
+        cameFromPauseMenu = false; // Came from main menu settings
+        updateKeybindsUI();
     });
 
     backButton.addEventListener('click', () => {
-        keybindsMenu.style.display = 'none';
-        pauseMenu.style.display = 'block';
+        keybindsMenu.classList.remove('active');
+        if (cameFromPauseMenu) {
+            pauseMenu.style.display = 'block';
+        } else {
+            document.getElementById('settings-menu').classList.add('active');
+        }
+        isRebinding = false; // Cancel any active rebind
+        actionToRebind = null;
     });
 
     document.body.addEventListener('click', () => {
@@ -419,6 +555,20 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
             controls.lock();
         }
     });
+
+    document.getElementById('keybindsList').addEventListener('click', (event) => {
+        if (event.target.tagName === 'BUTTON' && event.target.dataset.action) {
+            if (isRebinding) { // Cancel previous rebind if a new one is clicked
+                isRebinding = false;
+                actionToRebind = null;
+            }
+            isRebinding = true;
+            actionToRebind = event.target.dataset.action;
+            updateKeybindsUI(); // Update button text to "Press a key..."
+        }
+    });
+
+
 
     const moveSpeed = 5;
     const jumpForce = 7;
@@ -431,10 +581,10 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         right.crossVectors(camera.up, forward).normalize();
 
         const moveDirection = new THREE.Vector3();
-        if (keys['KeyW']) moveDirection.add(forward);
-        if (keys['KeyS']) moveDirection.sub(forward);
-        if (keys['KeyA']) moveDirection.add(right);
-        if (keys['KeyD']) moveDirection.sub(right);
+        if (keys[keybinds.moveForward]) moveDirection.add(forward);
+        if (keys[keybinds.moveBackward]) moveDirection.sub(forward);
+        if (keys[keybinds.moveLeft]) moveDirection.add(right);
+        if (keys[keybinds.moveRight]) moveDirection.sub(right);
 
         moveDirection.y = 0; // Don't allow flying
         if (moveDirection.lengthSq() > 0) { // To prevent normalizing a zero vector which results in NaN
@@ -448,7 +598,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         playerBody.velocity.y = currentVelocityY; // Preserve vertical velocity (gravity)
 
         // Jumping
-        if (keys['Space'] && canJump) {
+        if (keys[keybinds.jump] && canJump) {
             playerBody.velocity.y = jumpForce;
             canJump = false;
         }
@@ -474,6 +624,98 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         }
     }
 
+    function setScoping(scope) {
+        if (scope === isScoping) return;
+
+        isScoping = scope;
+        const weaponScopeFov = weapons[currentWeaponName].scopeFov || 30;
+        
+        // Set the target FOV for smooth transition in the animate loop
+        targetFov = isScoping ? weaponScopeFov : 75;
+
+        if (isScoping) {
+            crosshair.style.display = 'none';
+            gunMesh.visible = false; // Hide gun model when scoping
+
+            if (currentWeaponName === 'pistol') {
+                pistolScope.style.display = 'block';
+            } else if (currentWeaponName === 'rocketLauncher') {
+                rocketLauncherScope.style.display = 'block';
+            }
+        } else {
+            crosshair.style.display = 'block';
+            gunMesh.visible = true; // Show gun model when not scoping
+            pistolScope.style.display = 'none';
+            rocketLauncherScope.style.display = 'none';
+        }
+    }
+
+    function applyScopeSway(elapsedTime) {
+        if (!isScoping) {
+            scopeContainer.style.transform = 'translate(0, 0)';
+            return;
+        }
+
+        // Reduce sway significantly when holding breath
+        const swayMultiplier = isHoldingBreath ? 0.1 : 1.0;
+
+        const swayX = Math.sin(elapsedTime * 0.5) * 5 * swayMultiplier; // 5 pixels horizontal sway
+        const swayY = Math.cos(elapsedTime * 0.7) * 3 * swayMultiplier; // 3 pixels vertical sway
+
+        // Apply this sway to the scope container to move the overlay
+        // The CSS mask on the overlay will make it look like the view is moving
+        scopeContainer.style.transform = `translate(${swayX}px, ${swayY}px)`;
+    }
+
+
+    function checkResupply(deltaTime) {
+        const playerPos = playerBody.position;
+        let onPad = false;
+        for (const pad of resupplyPads) {
+            const distance = pad.position.distanceTo(playerPos);
+            if (distance < 2.5) { // Player is on the pad
+                onPad = true;
+                break;
+            }
+        }
+
+        if (onPad) {
+            if (!isOnResupplyPad) { // Just entered the pad
+                resupplyTimer = 0;
+                isOnResupplyPad = true;
+            }
+            resupplyTimer += deltaTime * 1000;
+            resupplyIndicator.style.display = 'block';
+            resupplyIndicator.textContent = `Resupplying... ${Math.round((resupplyTimer / resupplyTime) * 100)}%`;
+
+            if (resupplyTimer >= resupplyTime) {
+                console.log('Resupply complete!');
+                for (const weaponName in weapons) {
+                    unlockedWeapons[weaponName] = true;
+                    weapons[weaponName].reserveAmmo = weapons[weaponName].maxReserveAmmo;
+                }
+                updateAmmoUI();
+                resupplyTimer = 0; // Reset timer
+            }
+        } else if (isOnResupplyPad) { // Just left the pad
+            isOnResupplyPad = false;
+            resupplyIndicator.style.display = 'none';
+        }
+    }
+
+    window.addEventListener('mousedown', (event) => {
+        if (controls.isLocked && event.button === 2) { // Right mouse button
+            if (currentWeaponName === 'pistol' || currentWeaponName === 'rocketLauncher') {
+                setScoping(true);
+            }
+        }
+    });
+
+    window.addEventListener('keyup', (event) => {
+        if (event.code === keybinds.holdBreath) {
+            isHoldingBreath = false;
+        }
+    });
     // --- GAME LOOP ---
     let isPaused = false;
     const clock = new THREE.Clock();
@@ -496,6 +738,12 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         // Update physics world
         world.step(1 / 60, deltaTime, 3);
 
+        // Smoothly update camera FOV for scoping
+        if (Math.abs(camera.fov - targetFov) > 0.01) {
+            camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.2);
+            camera.updateProjectionMatrix();
+        }
+
         // Safely remove bodies after the physics step
         for (const body of bodiesToRemove) {
             world.removeBody(body);
@@ -504,6 +752,12 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
 
         // Handle player movement
         handleControls(deltaTime);
+
+        // Apply scope sway if aiming
+        applyScopeSway(elapsedTime);
+
+        // Check for resupply
+        checkResupply(deltaTime);
 
         // Update camera to follow player's physics body
         controls.getObject().position.copy(playerBody.position);
@@ -620,10 +874,21 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         const weapon = weapons[weaponName];
         const bulletType = weapon.bullet.type;
 
+        // Apply accuracy spread
+        const spread = isScoping ? (weapon.adsSpread || 0) : (weapon.hipSpread || 0);
+        const spreadDirection = direction.clone();
+        if (spread > 0) {
+            spreadDirection.add(new THREE.Vector3(
+                (Math.random() - 0.5) * spread,
+                (Math.random() - 0.5) * spread,
+                (Math.random() - 0.5) * spread
+            )).normalize();
+        }
+
         if (bulletType === 'pellet') { // Shotgun
             for (let i = 0; i < weapon.bullet.pelletCount; i++) {
-                const spread = weapon.bullet.spread;
-                const pelletDirection = direction.clone().add(
+                const shotgunSpread = weapon.bullet.spread;
+                const pelletDirection = spreadDirection.clone().add(
                     new THREE.Vector3(
                         (Math.random() - 0.5) * spread,
                         (Math.random() - 0.5) * spread,
@@ -632,10 +897,10 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
                 );
                 pelletDirection.normalize();
 
-                createBullet(pelletDirection, weapon.bullet);
+                createBullet(pelletDirection, weapon.bullet, weaponName);
             }
         } else { // Pistol and Rocket Launcher
-            createBullet(direction, weapon.bullet);
+            createBullet(spreadDirection, weapon.bullet, weaponName);
         }
 
         // Recoil
@@ -648,7 +913,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         }
     }
 
-    function createBullet(direction, bulletData) {
+    function createBullet(direction, bulletData, weaponName) {
         const startPosition = new THREE.Vector3();
         controls.getObject().getWorldPosition(startPosition);
         startPosition.add(direction.clone().multiplyScalar(2.0));
@@ -815,6 +1080,12 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     window.addEventListener('mousedown', (event) => {
         if (controls.isLocked && event.button === 0) {
             shoot();
+        }
+    });
+
+    window.addEventListener('mouseup', (event) => {
+        if (controls.isLocked && event.button === 2) { // Right mouse button
+            setScoping(false);
         }
     });
 

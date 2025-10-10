@@ -2,8 +2,8 @@ import * as THREE from 'three';
 
 export const weapons = {
     pistol: {
-        model: new THREE.BoxGeometry(0.1, 0.1, 0.5),
-        position: new THREE.Vector3(0.25, -0.2, -0.5),
+        model: new THREE.BoxGeometry(0.1, 0.1, 0.4),
+        position: new THREE.Vector3(0.15, -0.15, -0.3),
         bullet: {
             radius: 0.1,
             speed: 50,
@@ -14,7 +14,12 @@ export const weapons = {
         maxAmmo: 10,
         reserveAmmo: 30,
         maxReserveAmmo: 30,
-        reloadTime: 1500, // ms
+        reloadTime: 1500, // ms,
+        hipSpread: 0.05, // Cone of fire radius when hip-firing
+        adsSpread: 0.005, // Cone of fire radius when aiming down sights
+        adsPosition: new THREE.Vector3(0, -0.1, -0.25),
+        adsRotation: new THREE.Euler(0, 0, 0),
+        scopeFov: 40, // Higher FOV = less zoom
     },
     shotgun: {
         model: (() => {
@@ -35,7 +40,7 @@ export const weapons = {
             group.add(stock);
             return group;
         })(),
-        position: new THREE.Vector3(0.25, -0.2, -0.5),
+        position: new THREE.Vector3(0.2, -0.2, -0.5),
         bullet: {
             radius: 0.01,
             speed: 20,
@@ -67,7 +72,7 @@ export const weapons = {
             handle.position.set(0, -0.15, -0.1);
             group.add(handle);
             return group;
-        })(),
+        })(), // position: new THREE.Vector3(0.25, -0.2, -0.5),
         position: new THREE.Vector3(0.25, -0.2, -0.5),
         bullet: {
             radius: 0.2,
@@ -82,5 +87,11 @@ export const weapons = {
         reserveAmmo: 6,
         maxReserveAmmo: 6,
         reloadTime: 3000,
+        position: new THREE.Vector3(0.25, -0.2, -0.5),
+        adsPosition: new THREE.Vector3(0, -0.15, -0.5),
+        adsRotation: new THREE.Euler(0, 0, 0),
+        hipSpread: 0.1, // Rockets are inaccurate from the hip
+        adsSpread: 0.0,   // Perfectly accurate when scoped
+        scopeFov: 25, // Lower FOV = more zoom
     }
 };

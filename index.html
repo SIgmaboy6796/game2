@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pew Shoot</title>
+    <title>Call-Of-Zdenek</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -254,7 +254,7 @@
     <!-- Main Menu -->
     <div id="mainMenu" class="ui-container active">
         <div class="main-menu-header">
-            <h1 class="game-title">PEW SHOOT</h1>
+            <h1 class="game-title">Call-Of-Zdenek</h1>
         </div>
         <div class="main-menu-center">
             <button id="singlePlayerButton" class="btn btn-glow btn-lg">Single Player</button>
@@ -592,6 +592,8 @@
                 jump: 'Jump',
                 reload: 'Reload',
                 pickup: 'Pick Up Weapon',
+                shoot: 'Shoot',
+                scope: 'Aim Down Sights',
                 weapon1: 'Weapon 1 (Pistol)',
                 weapon2: 'Weapon 2 (Shotgun)',
                 weapon3: 'Weapon 3 (Rocket Launcher)',
@@ -627,6 +629,14 @@
                             window.removeEventListener('keydown', onKeybindSet);
                             return;
                         }
+                        // Handle mouse clicks
+                        if (event.type === 'mousedown') {
+                            saveKeybind(action, `MouseButton${event.button}`);
+                            button.textContent = getKeyDisplayName(`MouseButton${event.button}`);
+                            button.disabled = false;
+                            window.removeEventListener('keydown', onKeybindSet);
+                            return;
+                        }
                         saveKeybind(action, event.code);
                         button.textContent = getKeyDisplayName(event.code);
                         button.disabled = false;
@@ -634,6 +644,7 @@
                         loadKeybinds(); // Reload keybinds in the game logic
                     }
 
+                    window.addEventListener('mousedown', onKeybindSet, { once: true });
                     window.addEventListener('keydown', onKeybindSet, { once: true });
                 });
             });
@@ -649,6 +660,8 @@
                 jump: 'Jump',
                 reload: 'Reload',
                 pickup: 'Pick Up Weapon',
+                shoot: 'Shoot',
+                scope: 'Aim Down Sights',
                 weapon1: 'Weapon 1 (Pistol)',
                 weapon2: 'Weapon 2 (Shotgun)',
                 weapon3: 'Weapon 3 (Rocket Launcher)',
@@ -681,6 +694,14 @@
                             window.removeEventListener('keydown', onKeybindSet);
                             return;
                         }
+                        // Handle mouse clicks
+                        if (event.type === 'mousedown') {
+                            saveKeybind(action, `MouseButton${event.button}`);
+                            button.textContent = getKeyDisplayName(`MouseButton${event.button}`);
+                            button.disabled = false;
+                            window.removeEventListener('keydown', onKeybindSet);
+                            return;
+                        }
                         saveKeybind(action, event.code);
                         button.textContent = getKeyDisplayName(event.code);
                         button.disabled = false;
@@ -688,6 +709,7 @@
                         loadKeybinds(); // Reload keybinds in the game logic
                     }
 
+                    window.addEventListener('mousedown', onKeybindSet, { once: true });
                     window.addEventListener('keydown', onKeybindSet, { once: true });
                 });
             });

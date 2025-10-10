@@ -6,6 +6,8 @@ const defaultKeybinds = {
     jump: 'Space',
     reload: 'KeyR',
     pickup: 'KeyF',
+    shoot: 'MouseButton0',
+    scope: 'MouseButton2',
     weapon1: 'Digit1',
     weapon2: 'Digit2',
     weapon3: 'Digit3',
@@ -22,6 +24,12 @@ function getKeyDisplayName(keyCode) {
     }
     if (keyCode === 'Space') {
         return 'Spacebar';
+    }
+    if (keyCode === 'MouseButton0') {
+        return 'Left Mouse';
+    }
+    if (keyCode === 'MouseButton2') {
+        return 'Right Mouse';
     }
     return keyCode;
 }

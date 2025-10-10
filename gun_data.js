@@ -4,6 +4,7 @@ export const weapons = {
     pistol: {
         model: new THREE.BoxGeometry(0.1, 0.1, 0.5),
         position: new THREE.Vector3(0.25, -0.2, -0.5),
+        scopePosition: new THREE.Vector3(0, -0.15, -0.5),
         bullet: {
             radius: 0.1,
             speed: 50,
@@ -36,6 +37,7 @@ export const weapons = {
             return group;
         })(),
         position: new THREE.Vector3(0.25, -0.2, -0.5),
+        scopePosition: new THREE.Vector3(0, -0.17, -0.5),
         bullet: {
             radius: 0.01,
             speed: 20,
@@ -69,6 +71,7 @@ export const weapons = {
             return group;
         })(),
         position: new THREE.Vector3(0.25, -0.2, -0.5),
+        scopePosition: new THREE.Vector3(0, -0.18, -0.5),
         bullet: {
             radius: 0.2,
             speed: 20,
@@ -99,6 +102,7 @@ export const weapons = {
             return group;
         })(),
         position: new THREE.Vector3(0.25, -0.2, -0.5),
+        scopePosition: new THREE.Vector3(0, -0.18, -0.5),
         bullet: {
             radius: 0.05,
             speed: 65,

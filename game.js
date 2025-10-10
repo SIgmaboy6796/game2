@@ -76,6 +76,12 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     let canShoot = true;
     let isReloading = false;
 
+    // --- SCOPING ---
+    let isScoping = false;
+    const defaultFov = 75;
+    const scopeFov = 40;
+    const scopeSpeed = 0.15;
+
     function switchWeapon(weaponName) {
         if (!unlockedWeapons[weaponName]) {
             console.log(`${weaponName} is not unlocked.`);
@@ -340,6 +346,10 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     const keys = {};
     document.addEventListener('keydown', (event) => {
         keys[event.code] = true;
+        if (event.code === keybinds.shoot && !isPaused) {
+            shoot();
+        }
+
         if (event.code === 'Escape' && isPaused) { // This can remain hardcoded
             controls.lock();
         }
@@ -356,6 +366,23 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         }
     });
     document.addEventListener('keyup', (event) => (keys[event.code] = false));
+
+    document.addEventListener('mousedown', (event) => {
+        const mouseBind = `MouseButton${event.button}`;
+        if (mouseBind === keybinds.shoot && !isPaused) {
+            shoot();
+        }
+        if (mouseBind === keybinds.scope && !isPaused) {
+            isScoping = true;
+        }
+    });
+
+    document.addEventListener('mouseup', (event) => {
+        const mouseBind = `MouseButton${event.button}`;
+        if (mouseBind === keybinds.scope) {
+            isScoping = false;
+        }
+    });
 
     let canJump = false;
     playerBody.addEventListener('collide', (event) => {
@@ -423,7 +450,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         }
     });
 
-    const moveSpeed = 5;
+    let moveSpeed = 5;
     const jumpForce = 7;
 
     function handleControls(deltaTime) {
@@ -445,7 +472,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         }
 
         // Update player's velocity
-        const currentVelocityY = playerBody.velocity.y;
+        const currentVelocityY = playerBody.velocity.y; // ADS speed reduction
         playerBody.velocity.x = moveDirection.x * moveSpeed;
         playerBody.velocity.z = moveDirection.z * moveSpeed;
         playerBody.velocity.y = currentVelocityY; // Preserve vertical velocity (gravity)
@@ -498,6 +525,30 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
 
         // Update physics world
         world.step(1 / 60, deltaTime, 3);
+
+        // --- Update Scoping ---
+        const targetFov = isScoping ? scopeFov : defaultFov;
+        camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, scopeSpeed);
+        camera.updateProjectionMatrix();
+
+        if (gunMesh) {
+            const targetPos = isScoping ? currentWeapon.scopePosition : currentWeapon.position;
+            gunMesh.position.lerp(targetPos, scopeSpeed);
+        }
+
+        // Adjust sensitivity and movement speed when scoping
+        if (isScoping) {
+            controls.pointerSpeed = 0.5;
+            moveSpeed = 2.5;
+        } else {
+            controls.pointerSpeed = 1.0;
+            moveSpeed = 5;
+        }
+
+        // Handle continuous shooting for automatic weapons (if added later)
+        // if (keys[keybinds.shoot] && !isPaused) {
+        //     shoot();
+        // }
 
         // Safely remove bodies after the physics step
         for (const body of bodiesToRemove) {
@@ -814,12 +865,6 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         playerBody.velocity.set(0, 0, 0);
         updateHealthUI();
     }
-
-    window.addEventListener('mousedown', (event) => {
-        if (controls.isLocked && event.button === 0) {
-            shoot();
-        }
-    });
 
     function createNametag(text, font) {
         const textGeometry = new TextGeometry(text, {

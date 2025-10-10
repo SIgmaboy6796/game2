@@ -82,5 +82,35 @@ export const weapons = {
         reserveAmmo: 6,
         maxReserveAmmo: 6,
         reloadTime: 3000,
+    },
+    sniperRifle: {
+        model: (() => {
+            const group = new THREE.Group();
+
+            const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.0, 8), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+            tube.rotation.x = Math.PI / 2;
+            group.add(tube);
+
+            const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.2, 6), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+            scope.position.set(-0.1, 0.1, -0.2);
+            scope.rotation.z = Math.PI / 2;
+            group.add(scope);
+
+            return group;
+        })(),
+        position: new THREE.Vector3(0.25, -0.2, -0.5),
+        bullet: {
+            radius: 0.05,
+            speed: 65,
+            type: 'rocket',
+            explosionRadius: 0.01,
+            explosionImpulse: 500,
+        },
+        fireRate: 3000,
+        ammo: 2,
+        maxAmmo: 2,
+        reserveAmmo: 4,
+        maxReserveAmmo: 4,
+        reloadTime: 4000,
     }
 };

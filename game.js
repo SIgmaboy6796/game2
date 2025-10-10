@@ -6,6 +6,7 @@ import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { weapons } from './gun_data.js'; // This was missing from the context, but is fine.
 import { sendData } from './network.js';
 import { getMyId } from './network.js';
+import { loadKeybinds } from './keybinds.js';
 import { InstancedBufferAttribute } from 'three';
 
 export const objectsToUpdate = [];
@@ -13,6 +14,8 @@ export const players = {};
 let myPlayerId = null;
 export function init(nametag, isMultiplayer = false, isHost = false) {
     // --- SETUP ---
+    const keybinds = loadKeybinds();
+
     const scene = new THREE.Scene(); // This should be accessible to createPlayer
     const world = new CANNON.World({
         gravity: new CANNON.Vec3(0, -9.82, 0), // m/s²
@@ -337,18 +340,18 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     const keys = {};
     document.addEventListener('keydown', (event) => {
         keys[event.code] = true;
-        if (event.code === 'Escape' && isPaused) {
+        if (event.code === 'Escape' && isPaused) { // This can remain hardcoded
             controls.lock();
         }
-        if (event.code === 'KeyR') {
+        if (event.code === keybinds.reload) {
             reload();
         }
         // Weapon switching
-        if (event.code === 'Digit1' && unlockedWeapons.pistol) switchWeapon('pistol');
-        if (event.code === 'Digit2' && unlockedWeapons.shotgun) switchWeapon('shotgun');
-        if (event.code === 'Digit3' && unlockedWeapons.rocketLauncher) switchWeapon('rocketLauncher');
+        if (event.code === keybinds.weapon1 && unlockedWeapons.pistol) switchWeapon('pistol');
+        if (event.code === keybinds.weapon2 && unlockedWeapons.shotgun) switchWeapon('shotgun');
+        if (event.code === keybinds.weapon3 && unlockedWeapons.rocketLauncher) switchWeapon('rocketLauncher');
 
-        if (event.code === 'KeyF') {
+        if (event.code === keybinds.pickup) {
             tryPickupWeapon();
         }
     });
@@ -431,10 +434,10 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         right.crossVectors(camera.up, forward).normalize();
 
         const moveDirection = new THREE.Vector3();
-        if (keys['KeyW']) moveDirection.add(forward);
-        if (keys['KeyS']) moveDirection.sub(forward);
-        if (keys['KeyA']) moveDirection.add(right);
-        if (keys['KeyD']) moveDirection.sub(right);
+        if (keys[keybinds.moveForward]) moveDirection.add(forward);
+        if (keys[keybinds.moveBackward]) moveDirection.sub(forward);
+        if (keys[keybinds.moveLeft]) moveDirection.add(right);
+        if (keys[keybinds.moveRight]) moveDirection.sub(right);
 
         moveDirection.y = 0; // Don't allow flying
         if (moveDirection.lengthSq() > 0) { // To prevent normalizing a zero vector which results in NaN
@@ -448,7 +451,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         playerBody.velocity.y = currentVelocityY; // Preserve vertical velocity (gravity)
 
         // Jumping
-        if (keys['Space'] && canJump) {
+        if (keys[keybinds.jump] && canJump) {
             playerBody.velocity.y = jumpForce;
             canJump = false;
         }

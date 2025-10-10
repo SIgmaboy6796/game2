@@ -122,6 +122,22 @@
             box-shadow: 0 0 15px var(--glow-color);
             outline: none;
         }
+        
+        .keybind-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .keybind-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(0, 174, 255, 0.2);
+        }
+        .keybind-item:last-child {
+            border-bottom: none;
+        }
 
         /* --- Lobby & Settings --- */
         .menu-panel {
@@ -134,7 +150,14 @@
             max-width: 800px;
             max-height: 80vh;
             display: flex;
+            overflow-y: auto;
             flex-direction: column;
+        }
+        
+        #keybinds-panel {
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            text-align: left;
         }
 
         .menu-panel h2 {
@@ -211,6 +234,13 @@
             border: 1px solid var(--primary-color);
             box-shadow: 0 0 20px var(--glow-color);
             text-align: center;
+            max-height: 80vh; /* Add max-height */
+            overflow-y: auto; /* Add scroll for overflow */
+        }
+
+        #pauseMenu {
+            max-height: initial; /* Pause menu doesn't need to scroll */
+            overflow-y: initial;
         }
 
         #pauseMenu h2, #keybindsMenu h2 {
@@ -283,8 +313,11 @@
     <div id="settings-menu" class="ui-container">
         <div class="menu-panel text-center">
             <h2>Settings</h2>
-            <p>Settings will be implemented here. (e.g., Sensitivity, Volume)</p>
-            <button id="backToMainMenuFromSettings" class="btn btn-glow mt-4">Back</button>
+            <div id="main-settings-panel">
+                <button id="openKeybindsButton" class="btn btn-glow">Keybinds</button>
+                <button id="backToMainMenuFromSettings" class="btn btn-glow mt-4">Back</button>
+            </div>
+            <div id="keybinds-panel"></div>
         </div>
     </div>
 
@@ -302,19 +335,7 @@
             <button id="keybindsButton" class="btn btn-glow">Keybinds</button>
         </div>
         <div id="keybindsMenu" style="display: none;">
-            <h2>Keybinds</h2>
-            <p>Move Forward: W</p>
-            <p>Move Left: A</p>
-            <p>Move Backward: S</p>
-            <p>Move Right: D</p>
-            <p>Jump: Space</p>
-            <p>Pick Up Weapon: F</p>
-            <p>Reload: R</p>
-            <p>Shoot: Left Click</p>
-            <p>Select Pistol: 1</p>
-            <p>Select Shotgun: 2</p>
-            <p>Select Rocket Launcher: 3</p>
-            <button id="backButton" class="btn btn-glow">Back</button>
+            <!-- This will be populated by JavaScript -->
         </div>
     </div>
 
@@ -330,6 +351,7 @@
         import * as THREE from 'three';
         import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
         import { init as initGame, players } from '/game.js';
+        import { loadKeybinds, saveKeybind, getKeybinds, getKeyDisplayName } from '/keybinds.js';
         import { initNetwork, connectToHost, sendData, getConnections, getMyId, setAsHost, hostGame, getHostPeerId } from '/network.js';
 
         // --- UI Element Declarations ---
@@ -339,6 +361,9 @@
         const singlePlayerButton = document.getElementById('singlePlayerButton');
         const multiplayerButton = document.getElementById('multiplayerButton');
         const settingsButton = document.getElementById('settingsButton');
+        const openKeybindsButton = document.getElementById('openKeybindsButton');
+        const mainSettingsPanel = document.getElementById('main-settings-panel');
+        const keybindsPanel = document.getElementById('keybinds-panel');
         const settingsMenu = document.getElementById('settings-menu');
         const nametagInput = document.getElementById('nametagInput'); nametagInput.value = `Player-${Math.floor(1000 + Math.random() * 9000)}`;
         const joinView = document.getElementById('join-view');
@@ -376,6 +401,7 @@
 
         // --- UI View Management ---
         const allViews = [mainMenu, lobby, settingsMenu, gameUi];
+        loadKeybinds(); // Load keybinds on startup
         function showView(viewToShow) {
             allViews.forEach(view => {
                 if (view === viewToShow) {
@@ -387,6 +413,8 @@
         }
 
         // --- INITIALIZATION ---
+        populateKeybindsMenu();
+        populateInGameKeybindsMenu();
         setupGlobalNetworkListeners();
 
         function showNetworkStatus(message, isError = false) {
@@ -463,8 +491,15 @@
             showView(settingsMenu);
         });
 
+        openKeybindsButton.addEventListener('click', () => {
+            mainSettingsPanel.style.display = 'none';
+            keybindsPanel.style.display = 'flex';
+        });
+
         document.getElementById('backToMainMenuFromSettings').addEventListener('click', () => {
             showView(mainMenu);
+            mainSettingsPanel.style.display = 'block';
+            keybindsPanel.style.display = 'none';
         });
         
         document.getElementById('backToMainMenuFromLobby').addEventListener('click', () => {
@@ -544,6 +579,119 @@
             keybindsMenu.style.display = 'none';
             pauseMenu.style.display = 'block';
         });
+
+        // --- Keybinds UI Logic ---
+        function populateKeybindsMenu() {
+            // This function now populates the MAIN MENU keybinds panel
+            const keybinds = getKeybinds();
+            const actions = {
+                moveForward: 'Move Forward',
+                moveBackward: 'Move Backward',
+                moveLeft: 'Move Left',
+                moveRight: 'Move Right',
+                jump: 'Jump',
+                reload: 'Reload',
+                pickup: 'Pick Up Weapon',
+                weapon1: 'Weapon 1 (Pistol)',
+                weapon2: 'Weapon 2 (Shotgun)',
+                weapon3: 'Weapon 3 (Rocket Launcher)',
+            };
+
+            let html = `<h2>Keybinds</h2><ul class="keybind-list">`;
+            for (const action in actions) {
+                const key = keybinds[action];
+                html += `<li class="keybind-item">
+                           <span>${actions[action]}</span>
+                           <button class="btn btn-secondary keybind-button" data-action="${action}">${getKeyDisplayName(key)}</button>
+                         </li>`;
+            }
+            html += `</ul><button id="backToMainSettings" class="btn btn-glow mt-3">Back</button>`;
+            keybindsPanel.innerHTML = html;
+
+            document.getElementById('backToMainSettings').addEventListener('click', () => {
+                keybindsPanel.style.display = 'none';
+                mainSettingsPanel.style.display = 'block';
+            });
+
+            document.querySelectorAll('.keybind-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    const action = button.dataset.action;
+                    button.textContent = 'Press any key...';
+                    button.disabled = true;
+
+                    function onKeybindSet(event) {
+                        // Prevent binding Escape
+                        if (event.code === 'Escape') {
+                            button.textContent = getKeyDisplayName(keybinds[action]);
+                            button.disabled = false;
+                            window.removeEventListener('keydown', onKeybindSet);
+                            return;
+                        }
+                        saveKeybind(action, event.code);
+                        button.textContent = getKeyDisplayName(event.code);
+                        button.disabled = false;
+                        window.removeEventListener('keydown', onKeybindSet);
+                        loadKeybinds(); // Reload keybinds in the game logic
+                    }
+
+                    window.addEventListener('keydown', onKeybindSet, { once: true });
+                });
+            });
+        }
+
+        function populateInGameKeybindsMenu() {
+            const keybinds = getKeybinds();
+            const actions = {
+                moveForward: 'Move Forward',
+                moveBackward: 'Move Backward',
+                moveLeft: 'Move Left',
+                moveRight: 'Move Right',
+                jump: 'Jump',
+                reload: 'Reload',
+                pickup: 'Pick Up Weapon',
+                weapon1: 'Weapon 1 (Pistol)',
+                weapon2: 'Weapon 2 (Shotgun)',
+                weapon3: 'Weapon 3 (Rocket Launcher)',
+            };
+
+            let html = `<h2>Keybinds</h2><ul class="keybind-list">`;
+            for (const action in actions) {
+                const key = keybinds[action];
+                html += `<li class="keybind-item">
+                           <span>${actions[action]}</span>
+                           <button class="btn btn-secondary keybind-button-ingame" data-action="${action}">${getKeyDisplayName(key)}</button>
+                         </li>`;
+            }
+            html += `</ul><button id="backButton" class="btn btn-glow mt-3">Back</button>`;
+            keybindsMenu.innerHTML = html;
+
+            // The back button is already handled by an existing listener, so we don't need to re-add it.
+
+            document.querySelectorAll('.keybind-button-ingame').forEach(button => {
+                button.addEventListener('click', () => {
+                    const action = button.dataset.action;
+                    button.textContent = 'Press any key...';
+                    button.disabled = true;
+
+                    function onKeybindSet(event) {
+                        // Prevent binding Escape
+                        if (event.code === 'Escape') {
+                            button.textContent = getKeyDisplayName(getKeybinds()[action]);
+                            button.disabled = false;
+                            window.removeEventListener('keydown', onKeybindSet);
+                            return;
+                        }
+                        saveKeybind(action, event.code);
+                        button.textContent = getKeyDisplayName(event.code);
+                        button.disabled = false;
+                        window.removeEventListener('keydown', onKeybindSet);
+                        loadKeybinds(); // Reload keybinds in the game logic
+                    }
+
+                    window.addEventListener('keydown', onKeybindSet, { once: true });
+                });
+            });
+        }
 
         // --- GLOBAL EVENT LISTENERS ---
         // Centralized setup for all network and game-related events.

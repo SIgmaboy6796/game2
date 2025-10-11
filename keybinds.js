@@ -11,6 +11,7 @@ const defaultKeybinds = {
     weapon1: 'Digit1',
     weapon2: 'Digit2',
     weapon3: 'Digit3',
+    weapon4: 'Digit4',
 };
 
 let keybinds = {};

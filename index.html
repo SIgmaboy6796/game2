@@ -200,6 +200,74 @@
             pointer-events: none;
         }
 
+        #scope-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            clip-path: circle(35% at 50% 50%);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease-in-out;
+        }
+
+        #scope-overlay::before,
+        #scope-overlay::after {
+            content: '';
+            position: absolute;
+            background-color: black;
+        }
+
+        #scope-overlay::before { /* Vertical line */
+            left: 50%;
+            width: 2px;
+            height: 100%;
+        }
+
+        #scope-overlay::after { /* Horizontal line */
+            top: 50%;
+            height: 2px;
+            width: 100%;
+        }
+
+        #rocket-scope-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 80vmin;
+            height: 80vmin;
+            border: 2px solid rgba(0, 0, 0, 0.7);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.85);
+            opacity: 0; /* This was missing, so the transition wouldn't work on first scope */
+            pointer-events: none;
+            transition: opacity 0.15s ease-in-out;
+        }
+
+        /* Crosshairs for the rocket scope */
+        #rocket-scope-overlay::before,
+        #rocket-scope-overlay::after {
+            content: '';
+            position: absolute;
+            background-color: rgba(255, 0, 0, 0.7);
+            box-shadow: 0 0 2px rgba(255, 0, 0, 0.9);
+        }
+
+        #rocket-scope-overlay::before { /* Vertical line */
+            left: 50%;
+            width: 2px;
+            height: 100%;
+        }
+
+        #rocket-scope-overlay::after { /* Horizontal line */
+            top: 50%;
+            height: 2px;
+            width: 100%;
+        }
+
         #ammoCounter {
             position: absolute;
             bottom: 20px;
@@ -328,6 +396,8 @@
             <div id="health"></div>
         </div>
         <div class="crosshair"></div>
+        <div id="scope-overlay"></div>
+        <div id="rocket-scope-overlay"></div>
         <div id="networkStatus" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 16px; background-color: var(--surface-color); padding: 8px 15px; border-radius: 5px; display: none; border: 1px solid var(--primary-color);"></div>
         <div id="pauseMenu" style="display: none;">
             <h2>Paused</h2>
@@ -379,11 +449,13 @@
         const noServersMessage = document.getElementById('no-servers-message');
         const serverListContainer = document.getElementById('server-list-container');
         const networkStatus = document.getElementById('networkStatus');
-        const resumeButton = document.getElementById('resumeButton');
-        const keybindsButton = document.getElementById('keybindsButton');
-        const backButton = document.getElementById('backButton');
         const pauseMenu = document.getElementById('pauseMenu');
         const keybindsMenu = document.getElementById('keybindsMenu');
+        const resumeButton = document.getElementById('resumeButton');
+        const keybindsButton = document.getElementById('keybindsButton');
+        const backButton = document.getElementById('backButton'); // This is inside keybindsMenu, which is populated later
+        const scopeOverlay = document.getElementById('scope-overlay');
+        const rocketScopeOverlay = document.getElementById('rocket-scope-overlay');
 
         // Pause menu elements
         let controls; // This will be set in initGame
@@ -575,11 +647,6 @@
             keybindsMenu.style.display = 'block';
         });
 
-        backButton.addEventListener('click', () => {
-            keybindsMenu.style.display = 'none';
-            pauseMenu.style.display = 'block';
-        });
-
         // --- Keybinds UI Logic ---
         function populateKeybindsMenu() {
             // This function now populates the MAIN MENU keybinds panel
@@ -597,6 +664,7 @@
                 weapon1: 'Weapon 1 (Pistol)',
                 weapon2: 'Weapon 2 (Shotgun)',
                 weapon3: 'Weapon 3 (Rocket Launcher)',
+                weapon4: 'Weapon 4 (Sniper Rifle)',
             };
 
             let html = `<h2>Keybinds</h2><ul class="keybind-list">`;
@@ -624,24 +692,28 @@
                     function onKeybindSet(event) {
                         // Prevent binding Escape
                         if (event.code === 'Escape') {
-                            button.textContent = getKeyDisplayName(keybinds[action]);
-                            button.disabled = false;
-                            window.removeEventListener('keydown', onKeybindSet);
+                            cleanup();
                             return;
                         }
+
+                        let newKeyCode;
                         // Handle mouse clicks
                         if (event.type === 'mousedown') {
-                            saveKeybind(action, `MouseButton${event.button}`);
-                            button.textContent = getKeyDisplayName(`MouseButton${event.button}`);
-                            button.disabled = false;
-                            window.removeEventListener('keydown', onKeybindSet);
-                            return;
+                            newKeyCode = `MouseButton${event.button}`;
+                        } else { // Handle keyboard keys
+                            newKeyCode = event.code;
                         }
-                        saveKeybind(action, event.code);
-                        button.textContent = getKeyDisplayName(event.code);
+
+                        saveKeybind(action, newKeyCode);
+                        cleanup();
+                        loadKeybinds(); // Reload keybinds in the game logic
+                    }
+
+                    function cleanup() {
+                        button.textContent = getKeyDisplayName(getKeybinds()[action]);
                         button.disabled = false;
                         window.removeEventListener('keydown', onKeybindSet);
-                        loadKeybinds(); // Reload keybinds in the game logic
+                        window.removeEventListener('mousedown', onKeybindSet);
                     }
 
                     window.addEventListener('mousedown', onKeybindSet, { once: true });
@@ -665,6 +737,7 @@
                 weapon1: 'Weapon 1 (Pistol)',
                 weapon2: 'Weapon 2 (Shotgun)',
                 weapon3: 'Weapon 3 (Rocket Launcher)',
+                weapon4: 'Weapon 4 (Sniper Rifle)',
             };
 
             let html = `<h2>Keybinds</h2><ul class="keybind-list">`;
@@ -678,7 +751,11 @@
             html += `</ul><button id="backButton" class="btn btn-glow mt-3">Back</button>`;
             keybindsMenu.innerHTML = html;
 
-            // The back button is already handled by an existing listener, so we don't need to re-add it.
+            // The back button is created here, so we add the listener here.
+            document.getElementById('backButton').addEventListener('click', () => {
+                keybindsMenu.style.display = 'none';
+                pauseMenu.style.display = 'block';
+            });
 
             document.querySelectorAll('.keybind-button-ingame').forEach(button => {
                 button.addEventListener('click', () => {
@@ -689,24 +766,28 @@
                     function onKeybindSet(event) {
                         // Prevent binding Escape
                         if (event.code === 'Escape') {
-                            button.textContent = getKeyDisplayName(getKeybinds()[action]);
-                            button.disabled = false;
-                            window.removeEventListener('keydown', onKeybindSet);
+                            cleanup();
                             return;
                         }
+
+                        let newKeyCode;
                         // Handle mouse clicks
                         if (event.type === 'mousedown') {
-                            saveKeybind(action, `MouseButton${event.button}`);
-                            button.textContent = getKeyDisplayName(`MouseButton${event.button}`);
-                            button.disabled = false;
-                            window.removeEventListener('keydown', onKeybindSet);
-                            return;
+                            newKeyCode = `MouseButton${event.button}`;
+                        } else { // Handle keyboard keys
+                            newKeyCode = event.code;
                         }
-                        saveKeybind(action, event.code);
-                        button.textContent = getKeyDisplayName(event.code);
+
+                        saveKeybind(action, newKeyCode);
+                        cleanup();
+                        loadKeybinds(); // Reload keybinds in the game logic
+                    }
+
+                    function cleanup() {
+                        button.textContent = getKeyDisplayName(getKeybinds()[action]);
                         button.disabled = false;
                         window.removeEventListener('keydown', onKeybindSet);
-                        loadKeybinds(); // Reload keybinds in the game logic
+                        window.removeEventListener('mousedown', onKeybindSet);
                     }
 
                     window.addEventListener('mousedown', onKeybindSet, { once: true });

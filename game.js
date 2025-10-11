@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { PointerLockControls } from './PointerLockControls.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { weapons } from './gun_data.js'; // This was missing from the context, but is fine.
@@ -12,6 +13,7 @@ import { InstancedBufferAttribute } from 'three';
 export const objectsToUpdate = [];
 export const players = {};
 let myPlayerId = null;
+let gameFont = null; // To be used for weapon respawn timers
 export function init(nametag, isMultiplayer = false, isHost = false) {
     // --- SETUP ---
     const keybinds = loadKeybinds();
@@ -39,6 +41,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     let nametagMesh;
     const fontLoader = new FontLoader();
     fontLoader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+        gameFont = font; // Store the font for later use
         // Font is now loaded, we can create the local player's nametag
         if (nametag) {
             nametagMesh = createNametag(nametag, font);
@@ -46,12 +49,15 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         }
         // Now that all assets are ready, dispatch the event.
         window.dispatchEvent(new CustomEvent('game-initialized', {
-            detail: { scene: scene, handleShoot: handleShoot, font: font }
+            detail: { scene: scene, handleShoot: handleShoot, font: gameFont }
         }));
     });
     // --- UI ---
     const ammoCounter = document.getElementById('ammoCounter');
     const healthBar = document.getElementById('health');
+    const scopeOverlay = document.getElementById('scope-overlay');
+    const rocketScopeOverlay = document.getElementById('rocket-scope-overlay');
+    rocketScopeOverlay.style.opacity = 0; // Initialize opacity
 
     function updateAmmoUI() {
         if (isReloading) {
@@ -69,7 +75,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     let gunMesh;
     let currentWeaponName = 'pistol';
     let currentWeapon = weapons[currentWeaponName];
-    const unlockedWeapons = { 'pistol': true, 'shotgun': false, 'rocketLauncher': false };
+    const unlockedWeapons = { 'pistol': true, 'shotgun': false, 'rocketLauncher': false, 'sniperRifle': false };
     const activeRockets = []; // To track rockets for smoke trails
     const smokeParticles = []; // To manage smoke particles
 
@@ -79,7 +85,6 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     // --- SCOPING ---
     let isScoping = false;
     const defaultFov = 75;
-    const scopeFov = 40;
     const scopeSpeed = 0.15;
 
     function switchWeapon(weaponName) {
@@ -88,7 +93,9 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
             return;
         }
         if (gunMesh) {
+            gunMesh.visible = false; // Hide previous gun
             camera.remove(gunMesh);
+            gunMesh = null; // Clear reference
         }
         currentWeaponName = weaponName;
         currentWeapon = weapons[currentWeaponName];
@@ -104,10 +111,6 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
             gunMesh = new THREE.Mesh(currentWeapon.model, new THREE.MeshStandardMaterial({ color: 0x333333 }));
         }
         gunMesh.position.copy(currentWeapon.position);
-
-        if (weaponName === 'shotgun') {
-            gunMesh.scale.set(1.5, 1.5, 1.5); // Make the shotgun 50% larger
-        }
 
         camera.add(gunMesh);
         console.log(`Switched to ${currentWeaponName}`);
@@ -138,7 +141,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
 
     // --- GROUND ---
     const groundMaterial = new CANNON.Material('groundMaterial');
-    const groundBody = new CANNON.Body({
+    const groundBody = new CANNON.Body({ // This is fine, but I'll use a more descriptive name
         mass: 0, // mass = 0 makes it static
         shape: new CANNON.Plane(),
         material: groundMaterial,
@@ -207,6 +210,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     const PLAYER = 1;
     const BULLET = 2;
     const BOX = 4;
+    const GROUND = 8;
 
 
     const playerMaterial = new CANNON.Material('playerMaterial');
@@ -217,7 +221,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         material: playerMaterial,
     });
     playerBody.collisionFilterGroup = PLAYER;
-    playerBody.collisionFilterMask = BOX | PLAYER; // Player collides with boxes and itself
+    playerBody.collisionFilterMask = BOX | PLAYER | GROUND; // Player collides with boxes, other players, and the ground
     playerBody.health = 100;
     playerBody.allowSleep = false;
     world.addBody(playerBody);
@@ -302,7 +306,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
             material: boxCannonMaterial,
         });
         boxBody.collisionFilterGroup = BOX;
-        boxBody.collisionFilterMask = PLAYER | BULLET | BOX; // Box collides with everything
+        boxBody.collisionFilterMask = PLAYER | BULLET | BOX | GROUND; // Box collides with everything
         world.addBody(boxBody);
 
         const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
@@ -310,6 +314,42 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         scene.add(boxMesh);
 
         objectsToUpdate.push({ mesh: boxMesh, body: boxBody });
+    }
+
+    // Assign ground to its collision group
+    groundBody.collisionFilterGroup = GROUND;
+    groundBody.collisionFilterMask = PLAYER | BOX | BULLET; // Ground collides with player, boxes, and bullets
+
+
+
+    // --- SCENERY (TABLES, CHAIRS, ETC.) ---
+    function createScenery() {
+        // The table has been temporarily removed.
+        // const fbxLoader = new FBXLoader();
+        // const textureLoader = new THREE.TextureLoader();
+
+        // // --- Load Table ---
+        // const tableTexture = textureLoader.load('textures/wood_table.jpg'); // Corrected path
+        // const tableMaterial = new THREE.MeshStandardMaterial({ map: tableTexture });
+
+        // fbxLoader.load('models/table.fbx', (object) => { // Assumed model path
+        //     object.traverse(function (child) {
+        //         if (child.isMesh) {
+        //             child.material = tableMaterial.clone(); // Use a clone to avoid sharing materials
+        //             child.castShadow = true;
+        //             child.receiveShadow = true;
+        //         }
+        //     });
+        //     object.scale.set(0.02, 0.02, 0.02); // Adjust scale as needed
+        //     scene.add(object);
+
+        //     // Add physics body for the table
+        //     const tableShape = new CANNON.Box(new CANNON.Vec3(1, 0.5, 2)); // Adjusted shape to better match a typical table
+        //     const tableBody = new CANNON.Body({ mass: 0, shape: tableShape }); // mass: 0 makes it a static body
+        //     tableBody.position.set(5, 0.5, 5); // Set position
+        //     world.addBody(tableBody);
+        //     // No need to add to objectsToUpdate as it's a static body
+        // });
     }
 
     // --- WEAPON PICKUPS ---
@@ -324,32 +364,58 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
                 if(child.isMesh) child.material = child.material.clone();
             });
         } else {
-            pickupMesh = new THREE.Mesh(weaponData.model, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+            pickupMesh = new THREE.Mesh(weaponData.model, new THREE.MeshStandardMaterial({ color: 0xdddddd }));
         }
         
         pickupMesh.scale.set(2, 2, 2); // Make it bigger so it's easier to see
         pickupMesh.position.copy(position);
+        pickupMesh.position.y += 0.5; // Place it on top of the pedestal
         scene.add(pickupMesh);
+
+        // Create pedestal
+        const pedestalGeometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 16);
+        const pedestalMaterial = new THREE.MeshStandardMaterial({ color: 0x444444 });
+        const pedestalMesh = new THREE.Mesh(pedestalGeometry, pedestalMaterial);
+        pedestalMesh.position.copy(position);
+        pedestalMesh.position.y -= 0.5; // Position it under the weapon pickup spot
+        pedestalMesh.receiveShadow = true;
+        scene.add(pedestalMesh);
+
+        // Add pedestal physics body
+        const pedestalShape = new CANNON.Cylinder(0.5, 0.5, 1, 16);
+        const pedestalBody = new CANNON.Body({ mass: 0, shape: pedestalShape }); // mass 0 makes it static
+        pedestalBody.position.copy(pedestalMesh.position);
+        world.addBody(pedestalBody);
+
+        // Create timer text mesh (initially invisible)
+        const timerMesh = new THREE.Mesh(
+            new THREE.BufferGeometry(),
+            new THREE.MeshBasicMaterial({ color: 0xffff00 }) // Bright yellow for visibility
+        );
+        timerMesh.position.copy(position);
+        timerMesh.position.y += 1.5; // Position above the pedestal
+        scene.add(timerMesh);
 
         const pickup = {
             name: weaponName,
             mesh: pickupMesh,
-            isPickedUp: false
+            pedestalMesh: pedestalMesh,
+            timerMesh: timerMesh,
+            isPickedUp: false,
+            respawnTime: 15, // 15 seconds to respawn
+            respawnTimer: 0,
         };
         weaponPickups.push(pickup);
     }
 
     createWeaponPickup('shotgun', new THREE.Vector3(10, 0.5, 10));
     createWeaponPickup('rocketLauncher', new THREE.Vector3(-10, 0.5, -10));
+    createWeaponPickup('sniperRifle', new THREE.Vector3(0, 0.5, -15));
 
     // --- CONTROLS ---
     const keys = {};
     document.addEventListener('keydown', (event) => {
         keys[event.code] = true;
-        if (event.code === keybinds.shoot && !isPaused) {
-            shoot();
-        }
-
         if (event.code === 'Escape' && isPaused) { // This can remain hardcoded
             controls.lock();
         }
@@ -360,6 +426,7 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         if (event.code === keybinds.weapon1 && unlockedWeapons.pistol) switchWeapon('pistol');
         if (event.code === keybinds.weapon2 && unlockedWeapons.shotgun) switchWeapon('shotgun');
         if (event.code === keybinds.weapon3 && unlockedWeapons.rocketLauncher) switchWeapon('rocketLauncher');
+        if (event.code === keybinds.weapon4 && unlockedWeapons.sniperRifle) switchWeapon('sniperRifle');
 
         if (event.code === keybinds.pickup) {
             tryPickupWeapon();
@@ -369,19 +436,17 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
 
     document.addEventListener('mousedown', (event) => {
         const mouseBind = `MouseButton${event.button}`;
-        if (mouseBind === keybinds.shoot && !isPaused) {
-            shoot();
-        }
-        if (mouseBind === keybinds.scope && !isPaused) {
-            isScoping = true;
+        keys[mouseBind] = true;
+        if (mouseBind === keybinds.scope && !isPaused && currentWeapon.scope) {
+            // Toggle scoping state
+            isScoping = !isScoping;
         }
     });
 
     document.addEventListener('mouseup', (event) => {
-        const mouseBind = `MouseButton${event.button}`;
-        if (mouseBind === keybinds.scope) {
-            isScoping = false;
-        }
+        keys[`MouseButton${event.button}`] = false;
+        // The mouseup event is no longer needed for toggle-to-aim.
+        // You can leave this empty or remove it if it's not used for anything else.
     });
 
     let canJump = false;
@@ -493,8 +558,10 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
             if (distance < pickupDistance) {
                 console.log(`Picked up ${pickup.name}`);
                 unlockedWeapons[pickup.name] = true;
+                pickup.respawnTimer = pickup.respawnTime;
                 pickup.isPickedUp = true;
                 scene.remove(pickup.mesh);
+                scene.add(pickup.timerMesh); // Make timer visible
                 
                 // Give some reserve ammo on pickup
                 weapons[pickup.name].reserveAmmo = Math.min(weapons[pickup.name].maxReserveAmmo, weapons[pickup.name].reserveAmmo + weapons[pickup.name].maxAmmo);
@@ -502,6 +569,11 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
                 break; // Only pick up one weapon at a time
             }
         }
+    }
+
+    // --- INITIALIZE SCENERY ---
+    if (!isMultiplayer || isHost) {
+        // createScenery(); // Temporarily disabled to remove the table.
     }
 
     // --- GAME LOOP ---
@@ -527,17 +599,38 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         world.step(1 / 60, deltaTime, 3);
 
         // --- Update Scoping ---
-        const targetFov = isScoping ? scopeFov : defaultFov;
+        // If we switch weapons, automatically un-scope
+        if (isScoping && !currentWeapon.scope) {
+            isScoping = false;
+        }
+
+        const canScope = currentWeapon.scope && isScoping;
+        const targetFov = canScope ? currentWeapon.scope.fov : defaultFov;
         camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, scopeSpeed);
         camera.updateProjectionMatrix();
 
+        // Handle scope overlays
+        const showOverlay = canScope && currentWeapon.scope.hasOverlay;
+        const overlayId = showOverlay ? currentWeapon.scope.overlayId : null;
+
+        // Sniper scope
+        const sniperOpacity = (overlayId === 'scope-overlay') ? 1 : 0;
+        scopeOverlay.style.opacity = THREE.MathUtils.lerp(parseFloat(scopeOverlay.style.opacity) || 0, sniperOpacity, scopeSpeed);
+        
+        // Rocket launcher scope
+        const rocketOpacity = (overlayId === 'rocket-scope-overlay') ? 1 : 0;
+        if (rocketScopeOverlay) {
+            rocketScopeOverlay.style.opacity = THREE.MathUtils.lerp(parseFloat(rocketScopeOverlay.style.opacity) || 0, rocketOpacity, scopeSpeed);
+        }
+        
         if (gunMesh) {
-            const targetPos = isScoping ? currentWeapon.scopePosition : currentWeapon.position;
-            gunMesh.position.lerp(targetPos, scopeSpeed);
+            // Only move gun if it can be scoped
+            const targetPos = canScope ? currentWeapon.scopePosition : currentWeapon.position;
+            if (targetPos) gunMesh.position.lerp(targetPos, scopeSpeed);
         }
 
         // Adjust sensitivity and movement speed when scoping
-        if (isScoping) {
+        if (canScope) {
             controls.pointerSpeed = 0.5;
             moveSpeed = 2.5;
         } else {
@@ -546,9 +639,9 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         }
 
         // Handle continuous shooting for automatic weapons (if added later)
-        // if (keys[keybinds.shoot] && !isPaused) {
-        //     shoot();
-        // }
+        if (keys[keybinds.shoot] && !isPaused) {
+            shoot();
+        }
 
         // Safely remove bodies after the physics step
         for (const body of bodiesToRemove) {
@@ -556,6 +649,34 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         }
         bodiesToRemove.length = 0; // Clear the array
 
+        // Update weapon pickup timers
+        for (const pickup of weaponPickups) {
+            if (pickup.isPickedUp && pickup.respawnTimer > 0) {
+                pickup.respawnTimer -= deltaTime;
+
+                // Update timer text
+                const timeLeft = Math.ceil(pickup.respawnTimer);
+                const newText = timeLeft.toString();
+
+                if (pickup.timerMesh.userData.text !== newText) {
+                    pickup.timerMesh.userData.text = newText;
+                    if (gameFont) {
+                        const textGeometry = new TextGeometry(newText, {
+                            font: gameFont,
+                            size: 0.5,
+                            height: 0.1,
+                        });
+                        textGeometry.center();
+                        pickup.timerMesh.geometry.dispose(); // Dispose old geometry
+                        pickup.timerMesh.geometry = textGeometry;
+                    }
+                }
+
+                if (pickup.respawnTimer <= 0) {
+                    respawnWeapon(pickup);
+                }
+            }
+        }
         // Handle player movement
         handleControls(deltaTime);
 
@@ -619,6 +740,17 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
     }
 
     // --- SHOOTING & RELOADING ---
+    function respawnWeapon(pickup) {
+        console.log(`${pickup.name} has respawned.`);
+        pickup.isPickedUp = false;
+        pickup.respawnTimer = 0;
+        scene.remove(pickup.timerMesh); // Hide timer
+        pickup.timerMesh.geometry.dispose(); // Clear geometry
+        pickup.timerMesh.userData.text = null;
+        weapons[pickup.name].reserveAmmo = weapons[pickup.name].maxReserveAmmo; // Refill ammo
+        scene.add(pickup.mesh);
+    }
+
     function reload() {
         if (isReloading || currentWeapon.ammo === currentWeapon.maxAmmo || currentWeapon.reserveAmmo <= 0) {
             return;
@@ -676,7 +808,8 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
 
         if (bulletType === 'pellet') { // Shotgun
             for (let i = 0; i < weapon.bullet.pelletCount; i++) {
-                const spread = weapon.bullet.spread;
+                // Use hipfireSpread if not scoping, otherwise use normal spread
+                const spread = !isScoping && weapon.bullet.hipfireSpread ? weapon.bullet.hipfireSpread : weapon.bullet.spread;
                 const pelletDirection = direction.clone().add(
                     new THREE.Vector3(
                         (Math.random() - 0.5) * spread,
@@ -689,7 +822,19 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
                 createBullet(pelletDirection, weapon.bullet);
             }
         } else { // Pistol and Rocket Launcher
-            createBullet(direction, weapon.bullet);
+            let finalDirection = direction.clone();
+            // Add hip-fire inaccuracy if applicable
+            if (!isScoping && weapon.bullet.hipfireSpread) {
+                const spread = weapon.bullet.hipfireSpread;
+                finalDirection.add(
+                    new THREE.Vector3(
+                        (Math.random() - 0.5) * spread,
+                        (Math.random() - 0.5) * spread,
+                        (Math.random() - 0.5) * spread
+                    )
+                ).normalize();
+            }
+            createBullet(finalDirection, weapon.bullet);
         }
 
         // Recoil
@@ -708,17 +853,15 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
         startPosition.add(direction.clone().multiplyScalar(2.0));
 
         const bulletBody = new CANNON.Body({
-            mass: bulletData.type === 'rocket' ? 0 : 0.1, // Kinematic rockets, dynamic bullets
+            mass: bulletData.type === 'rocket' ? 0.1 : 0.1, // Rockets are now dynamic to collide with static ground
             shape: new CANNON.Sphere(bulletData.radius),
             position: new CANNON.Vec3().copy(startPosition),
+            gravity: new CANNON.Vec3(0, bulletData.gravity !== undefined ? -9.82 * bulletData.gravity : -9.82, 0),
             material: bulletMaterial,
         });
-        if (bulletData.type === 'rocket') {
-            bulletBody.type = CANNON.Body.KINEMATIC;
-        }
         bulletBody.collisionFilterGroup = BULLET;
 
-        bulletBody.collisionFilterMask = BOX; // Bullets only collide with boxes
+        bulletBody.collisionFilterMask = BOX | GROUND; // Bullets collide with boxes and the ground
 
         let bulletMesh;
         if (bulletData.type === 'rocket') {
@@ -845,6 +988,21 @@ export function init(nametag, isMultiplayer = false, isHost = false) {
                 }
             }
         });
+
+        // Check for player damage
+        const playerDist = playerBody.position.distanceTo(position);
+        if (playerDist < radius) {
+            // Apply damage
+            const damage = (1 - (playerDist / radius)) * 50; // Max 50 damage at epicenter
+            applyDamage(damage);
+
+            // Apply knockback
+            const knockbackDirection = new CANNON.Vec3();
+            playerBody.position.vsub(position, knockbackDirection);
+            knockbackDirection.normalize();
+            const knockbackMagnitude = impulse * (1 - playerDist / radius);
+            playerBody.applyImpulse(knockbackDirection.scale(knockbackMagnitude * 0.2), playerBody.position); // Scaled down for player
+        }
     }
 
     function applyDamage(amount) {
